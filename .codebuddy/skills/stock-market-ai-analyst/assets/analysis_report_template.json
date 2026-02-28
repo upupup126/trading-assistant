@@ -1,0 +1,269 @@
+{
+  "market_analysis_template": {
+    "title": "市场分析报告",
+    "sections": [
+      {
+        "name": "市场概况",
+        "fields": [
+          "market_sentiment",
+          "key_indices_performance",
+          "volume_analysis",
+          "advance_decline_ratio"
+        ]
+      },
+      {
+        "name": "热点分析",
+        "fields": [
+          "hot_sectors",
+          "trending_themes",
+          "capital_flow"
+        ]
+      },
+      {
+        "name": "风险提示",
+        "fields": [
+          "risk_factors",
+          "market_warnings",
+          "volatility_assessment"
+        ]
+      },
+      {
+        "name": "投资建议",
+        "fields": [
+          "opportunities",
+          "strategy_recommendations",
+          "timing_advice"
+        ]
+      }
+    ],
+    "footer": {
+      "disclaimer": "本报告仅供参考，不构成投资建议。股市有风险，投资需谨慎。",
+      "confidence_display": true,
+      "timestamp_display": true
+    }
+  },
+  
+  "stock_analysis_template": {
+    "title": "个股分析报告 - {symbol}",
+    "sections": [
+      {
+        "name": "基本信息",
+        "fields": [
+          "symbol",
+          "company_name",
+          "current_price",
+          "market_cap",
+          "sector"
+        ]
+      },
+      {
+        "name": "投资建议",
+        "fields": [
+          "trading_signal",
+          "target_price",
+          "expected_return",
+          "holding_period"
+        ]
+      },
+      {
+        "name": "技术分析",
+        "fields": [
+          "support_levels",
+          "resistance_levels",
+          "technical_indicators",
+          "price_trend"
+        ]
+      },
+      {
+        "name": "投资逻辑",
+        "fields": [
+          "buy_reasons",
+          "sell_reasons",
+          "competitive_advantages"
+        ]
+      },
+      {
+        "name": "风险评估",
+        "fields": [
+          "risk_factors",
+          "max_risk",
+          "risk_mitigation"
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "type": "price_chart",
+        "title": "价格走势图",
+        "timeframe": "3M"
+      },
+      {
+        "type": "volume_chart", 
+        "title": "成交量分析",
+        "timeframe": "1M"
+      }
+    ],
+    "footer": {
+      "disclaimer": "本分析基于公开信息和AI模型，仅供参考。请结合自身情况做出投资决策。",
+      "confidence_display": true,
+      "analyst_info": "AI智能分析师"
+    }
+  },
+  
+  "risk_assessment_template": {
+    "title": "投资组合风险评估报告",
+    "sections": [
+      {
+        "name": "风险概览",
+        "fields": [
+          "overall_risk_level",
+          "risk_score",
+          "risk_grade"
+        ]
+      },
+      {
+        "name": "风险分解",
+        "fields": [
+          "market_risk",
+          "liquidity_risk", 
+          "concentration_risk",
+          "volatility_risk"
+        ]
+      },
+      {
+        "name": "投资组合分析",
+        "fields": [
+          "portfolio_composition",
+          "diversification_score",
+          "correlation_analysis"
+        ]
+      },
+      {
+        "name": "风险预警",
+        "fields": [
+          "risk_warnings",
+          "stress_test_results",
+          "scenario_analysis"
+        ]
+      },
+      {
+        "name": "改进建议",
+        "fields": [
+          "mitigation_strategies",
+          "rebalancing_advice",
+          "hedging_options"
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "type": "risk_radar",
+        "title": "风险雷达图",
+        "dimensions": ["市场风险", "流动性风险", "集中度风险", "波动性风险"]
+      },
+      {
+        "type": "portfolio_pie",
+        "title": "投资组合构成",
+        "breakdown": "by_sector"
+      }
+    ],
+    "footer": {
+      "disclaimer": "风险评估基于历史数据和当前市场条件，实际风险可能有所不同。",
+      "update_frequency": "建议每周更新一次风险评估"
+    }
+  },
+  
+  "strategy_advice_template": {
+    "title": "交易策略建议",
+    "sections": [
+      {
+        "name": "策略概述",
+        "fields": [
+          "strategy_name",
+          "strategy_type",
+          "market_suitability",
+          "risk_level"
+        ]
+      },
+      {
+        "name": "执行计划",
+        "fields": [
+          "entry_conditions",
+          "exit_conditions",
+          "position_sizing",
+          "timing_advice"
+        ]
+      },
+      {
+        "name": "风险管理",
+        "fields": [
+          "stop_loss",
+          "take_profit",
+          "max_loss_per_trade",
+          "risk_reward_ratio"
+        ]
+      },
+      {
+        "name": "预期表现",
+        "fields": [
+          "expected_return",
+          "win_rate",
+          "average_holding_period",
+          "maximum_drawdown"
+        ]
+      },
+      {
+        "name": "备选方案",
+        "fields": [
+          "alternative_strategies",
+          "market_condition_adjustments",
+          "contingency_plans"
+        ]
+      }
+    ],
+    "footer": {
+      "disclaimer": "策略建议基于当前市场条件，需要根据实际情况灵活调整。",
+      "risk_warning": "任何交易策略都存在亏损风险，请谨慎使用。"
+    }
+  },
+  
+  "styling": {
+    "colors": {
+      "primary": "#1890FF",
+      "success": "#52C41A",
+      "danger": "#FF4D4F", 
+      "warning": "#FAAD14",
+      "info": "#13C2C2",
+      "background": "#001529",
+      "text": "#FFFFFF"
+    },
+    "fonts": {
+      "heading": "Inter, -apple-system, sans-serif",
+      "body": "Inter, -apple-system, sans-serif",
+      "code": "Monaco, Consolas, monospace"
+    },
+    "spacing": {
+      "section_margin": "24px",
+      "field_margin": "16px",
+      "padding": "20px"
+    },
+    "charts": {
+      "height": "300px",
+      "responsive": true,
+      "theme": "dark"
+    }
+  },
+  
+  "export_options": {
+    "formats": ["PDF", "HTML", "JSON"],
+    "pdf_settings": {
+      "page_size": "A4",
+      "orientation": "portrait",
+      "margins": "20mm"
+    },
+    "html_settings": {
+      "include_css": true,
+      "responsive": true
+    }
+  }
+}

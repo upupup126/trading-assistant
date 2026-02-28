@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15
+    container_name: trading-postgres
+    environment:
+      POSTGRES_DB: trading_assistant
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: trading_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./shared/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./shared/database/init.sql:/docker-entrypoint-initdb.d/02-init.sql
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d trading_assistant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Go主服务
+  go-service:
+    build:
+      context: ./go-service
+      dockerfile: Dockerfile
+    container_name: trading-go-service
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - GO_SERVICE_PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=trading_assistant
+      - DB_USER=trading_user
+      - DB_PASSWORD=trading_password
+      - DB_SSLMODE=disable
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=trading-assistant-jwt-secret-key-2024
+      - PYTHON_SERVICE_URL=http://python-service:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # Python AI服务
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    container_name: trading-python-service
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=postgresql://trading_user:trading_password@postgres:5432/trading_assistant
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=1dc20892dee6413b91e261e22e8b40a6.rT8xKdbtcbr4tt2O
+      - OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+      - OPENAI_MODEL=glm-4-flash
+      - CORS_ORIGINS=["http://localhost:3000","http://45.40.228.140:3000","http://45.40.228.140"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # 前端应用
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: trading-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - go-service
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  trading-network:
+    driver: bridge
