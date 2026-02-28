@@ -168,7 +168,7 @@ export default function AIAnalysis() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6">
+    <div className="min-h-screen bg-slate-900 text-white px-4 sm:px-6 py-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* 页面标题 */}
         <div className="text-center mb-8">
@@ -177,7 +177,7 @@ export default function AIAnalysis() {
         </div>
 
         <Tabs defaultValue="market" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-800">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 bg-slate-800">
             <TabsTrigger value="market" className="data-[state=active]:bg-blue-600">
               市场分析
             </TabsTrigger>
@@ -288,7 +288,7 @@ export default function AIAnalysis() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1">
                     <Label htmlFor="stock-symbol" className="text-white">股票代码</Label>
                     <Input
@@ -303,7 +303,7 @@ export default function AIAnalysis() {
                     <Button 
                       onClick={handleStockAnalysis}
                       disabled={loadingStates[`stockAnalysis_${stockSymbol.toUpperCase()}`]}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                     >
                       {loadingStates[`stockAnalysis_${stockSymbol.toUpperCase()}`] ? (
                         <Loader2 className="w-4 h-4 animate-spin" />

@@ -73,8 +73,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       {/* 顶部导航 */}
-      <header className="bg-slate-800 border-b border-slate-700 p-4">
-        <div className="flex items-center justify-between">
+      <header className="bg-slate-800 border-b border-slate-700 px-4 sm:px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-white">交易仪表板</h1>
             <p className="text-slate-400">欢迎回来，{user?.username}</p>
@@ -83,7 +83,7 @@ export default function Dashboard() {
             onClick={handleRefresh}
             disabled={refreshing}
             variant="outline"
-            className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            className="border-slate-600 text-slate-300 hover:bg-slate-700 w-full sm:w-auto"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             刷新数据
@@ -91,7 +91,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="p-6 space-y-6">
+      <div className="px-4 sm:px-6 py-6 space-y-6">
         {/* AI市场分析摘要 */}
         {marketAnalysis && (
           <Card className="trading-card">
