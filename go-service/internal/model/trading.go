@@ -40,6 +40,7 @@ type TradeExecution struct {
 	UserID          uuid.UUID  `json:"user_id" gorm:"type:uuid;not null"`
 	TradingPlanID   *uuid.UUID `json:"trading_plan_id" gorm:"type:uuid"`
 	StockID         uuid.UUID  `json:"stock_id" gorm:"type:uuid;not null"`
+	Account         string     `json:"account" gorm:"size:50;default:'';index"`
 	TradeType       string     `json:"trade_type" gorm:"not null;size:20"` // BUY, SELL
 	Quantity        int        `json:"quantity" gorm:"not null"`
 	Price           float64    `json:"price" gorm:"type:decimal(10,4);not null"`
@@ -59,8 +60,9 @@ type TradeExecution struct {
 // Position 持仓模型
 type Position struct {
 	ID            uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
-	UserID        uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
-	StockID       uuid.UUID `json:"stock_id" gorm:"type:uuid;not null"`
+	UserID        uuid.UUID `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:idx_positions_user_stock_account"`
+	StockID       uuid.UUID `json:"stock_id" gorm:"type:uuid;not null;uniqueIndex:idx_positions_user_stock_account"`
+	Account       string    `json:"account" gorm:"size:50;default:'';uniqueIndex:idx_positions_user_stock_account"`
 	Quantity      int       `json:"quantity" gorm:"not null"`
 	AvgCost       float64   `json:"avg_cost" gorm:"type:decimal(10,4);not null"`
 	TotalCost     float64   `json:"total_cost" gorm:"type:decimal(12,2);not null"`
@@ -73,6 +75,20 @@ type Position struct {
 	// 关联
 	User  User  `json:"user,omitempty" gorm:"foreignKey:UserID"`
 	Stock Stock `json:"stock,omitempty" gorm:"foreignKey:StockID"`
+}
+
+// AccountFund 账户资金模型（每个用户每个账户独立的资金记录）
+type AccountFund struct {
+	ID            uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	UserID        uuid.UUID `json:"user_id" gorm:"type:uuid;not null"`
+	Account       string    `json:"account" gorm:"size:50;not null"`
+	TotalCapital  float64   `json:"total_capital" gorm:"type:decimal(14,2);default:0"`
+	AvailableCash float64   `json:"available_cash" gorm:"type:decimal(14,2);default:0"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+
+	// 关联
+	User *User `json:"-" gorm:"foreignKey:UserID"`
 }
 
 // TradingJournal 交易日志模型（复盘分析）
@@ -117,6 +133,13 @@ func (p *Position) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+func (af *AccountFund) BeforeCreate(tx *gorm.DB) error {
+	if af.ID == uuid.Nil {
+		af.ID = uuid.New()
+	}
+	return nil
+}
+
 func (tj *TradingJournal) BeforeCreate(tx *gorm.DB) error {
 	if tj.ID == uuid.Nil {
 		tj.ID = uuid.New()
@@ -135,6 +158,10 @@ func (TradeExecution) TableName() string {
 
 func (Position) TableName() string {
 	return "positions"
+}
+
+func (AccountFund) TableName() string {
+	return "account_funds"
 }
 
 func (TradingJournal) TableName() string {

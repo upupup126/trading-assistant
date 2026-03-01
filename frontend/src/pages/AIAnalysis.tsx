@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress'
 import { useAIStore } from '@/stores/aiStore'
 import { useToast } from '@/hooks/use-toast'
 import { formatNumber, formatPercent, getPriceChangeColor } from '@/lib/utils'
+import KlineChart from '@/components/charts/KlineChart'
 import { 
   Brain, 
   TrendingUp, 
@@ -153,16 +154,16 @@ export default function AIAnalysis() {
 
   const getRecommendationIcon = (recommendation: string) => {
     switch (recommendation) {
-      case 'BUY': return <TrendingUp className="w-4 h-4 text-green-500" />
-      case 'SELL': return <TrendingDown className="w-4 h-4 text-red-500" />
+      case 'BUY': return <TrendingUp className="w-4 h-4 text-red-500" />
+      case 'SELL': return <TrendingDown className="w-4 h-4 text-green-500" />
       default: return <Target className="w-4 h-4 text-yellow-500" />
     }
   }
 
   const getRecommendationColor = (recommendation: string) => {
     switch (recommendation) {
-      case 'BUY': return 'text-green-500 bg-green-500/10 border-green-500'
-      case 'SELL': return 'text-red-500 bg-red-500/10 border-red-500'
+      case 'BUY': return 'text-red-500 bg-red-500/10 border-red-500'
+      case 'SELL': return 'text-green-500 bg-green-500/10 border-green-500'
       default: return 'text-yellow-500 bg-yellow-500/10 border-yellow-500'
     }
   }
@@ -263,7 +264,7 @@ export default function AIAnalysis() {
                       <ul className="space-y-2">
                         {marketAnalysis.key_insights.map((insight, index) => (
                           <li key={index} className="text-slate-300 flex items-start">
-                            <CheckCircle className="w-4 h-4 text-green-400 mr-2 mt-0.5 flex-shrink-0" />
+                            <CheckCircle className="w-4 h-4 text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
                             {insight}
                           </li>
                         ))}
@@ -343,7 +344,7 @@ export default function AIAnalysis() {
                               <h4 className="font-semibold text-white mb-2">机会评分</h4>
                               <div className="space-y-2">
                                 <Progress value={analysis.opportunity_score * 100} className="bg-slate-700" />
-                                <p className="text-sm text-green-400">
+                                <p className="text-sm text-red-400">
                                   {formatPercent(analysis.opportunity_score * 100)}
                                 </p>
                               </div>
@@ -352,7 +353,7 @@ export default function AIAnalysis() {
                               <h4 className="font-semibold text-white mb-2">风险评分</h4>
                               <div className="space-y-2">
                                 <Progress value={analysis.risk_score * 100} className="bg-slate-700" />
-                                <p className="text-sm text-red-400">
+                                <p className="text-sm text-green-400">
                                   {formatPercent(analysis.risk_score * 100)}
                                 </p>
                               </div>
@@ -362,7 +363,7 @@ export default function AIAnalysis() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-slate-800/50 p-4 rounded-lg">
                               <h4 className="font-semibold text-white mb-2 flex items-center">
-                                <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
+                                <CheckCircle className="w-4 h-4 text-red-400 mr-2" />
                                 利好因素
                               </h4>
                               <ul className="space-y-1">
@@ -375,7 +376,7 @@ export default function AIAnalysis() {
                             </div>
                             <div className="bg-slate-800/50 p-4 rounded-lg">
                               <h4 className="font-semibold text-white mb-2 flex items-center">
-                                <XCircle className="w-4 h-4 text-red-400 mr-2" />
+                                <XCircle className="w-4 h-4 text-green-400 mr-2" />
                                 风险因素
                               </h4>
                               <ul className="space-y-1">
@@ -394,7 +395,7 @@ export default function AIAnalysis() {
                                 <h4 className="font-semibold text-white mb-2">支撑位</h4>
                                 <div className="flex flex-wrap gap-2">
                                   {analysis.support_levels.map((level, index) => (
-                                    <Badge key={index} variant="outline" className="border-green-500 text-green-400">
+                                    <Badge key={index} variant="outline" className="border-red-500 text-red-400">
                                       ¥{formatNumber(level)}
                                     </Badge>
                                   ))}
@@ -404,7 +405,7 @@ export default function AIAnalysis() {
                                 <h4 className="font-semibold text-white mb-2">阻力位</h4>
                                 <div className="flex flex-wrap gap-2">
                                   {analysis.resistance_levels.map((level, index) => (
-                                    <Badge key={index} variant="outline" className="border-red-500 text-red-400">
+                                    <Badge key={index} variant="outline" className="border-green-500 text-green-400">
                                       ¥{formatNumber(level)}
                                     </Badge>
                                   ))}
@@ -412,6 +413,9 @@ export default function AIAnalysis() {
                               </div>
                             </div>
                           )}
+
+                          {/* 个股K线图 */}
+                          <KlineChart symbol={stockSymbol.toUpperCase()} title={`${stockSymbol.toUpperCase()} K线走势`} />
                         </>
                       )
                     })()}
@@ -472,9 +476,9 @@ export default function AIAnalysis() {
                       <div className="bg-slate-800/50 p-4 rounded-lg text-center">
                         <h4 className="font-semibold text-white mb-2">风险等级</h4>
                         <Badge className={
-                          riskAssessment.portfolio_risk_level === 'LOW' ? 'bg-green-500/20 text-green-400' :
+                          riskAssessment.portfolio_risk_level === 'LOW' ? 'bg-red-500/20 text-red-400' :
                           riskAssessment.portfolio_risk_level === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400' :
-                          'bg-red-500/20 text-red-400'
+                          'bg-green-500/20 text-green-400'
                         }>
                           {riskAssessment.portfolio_risk_level}
                         </Badge>
@@ -616,13 +620,13 @@ export default function AIAnalysis() {
                             </div>
                             <div className="bg-slate-800/50 p-4 rounded-lg text-center">
                               <h4 className="font-semibold text-white mb-2">止损价格</h4>
-                              <p className="text-xl font-bold text-red-400">
+                              <p className="text-xl font-bold text-green-400">
                                 {advice.stop_loss ? `¥${formatNumber(advice.stop_loss)}` : 'N/A'}
                               </p>
                             </div>
                             <div className="bg-slate-800/50 p-4 rounded-lg text-center">
                               <h4 className="font-semibold text-white mb-2">止盈价格</h4>
-                              <p className="text-xl font-bold text-green-400">
+                              <p className="text-xl font-bold text-red-400">
                                 {advice.take_profit ? `¥${formatNumber(advice.take_profit)}` : 'N/A'}
                               </p>
                             </div>

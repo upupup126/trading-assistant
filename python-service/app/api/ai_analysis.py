@@ -110,6 +110,26 @@ async def search_stocks(q: str, limit: int = 10):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"股票搜索失败: {str(e)}")
 
+@router.get("/stock/{symbol}/minute")
+async def get_stock_minute(symbol: str):
+    """获取股票分时走势数据"""
+    try:
+        async with market_data_service as service:
+            data = await service.get_minute_data(symbol)
+            return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取分时数据失败: {str(e)}")
+
+@router.get("/sector/hotspot")
+async def get_sector_hotspot(days: int = 5):
+    """获取概念板块热点轮动数据"""
+    try:
+        async with market_data_service as service:
+            data = await service.get_concept_sector_hotspot(days)
+            return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取板块热点数据失败: {str(e)}")
+
 @router.get("/health")
 async def health_check():
     """健康检查"""

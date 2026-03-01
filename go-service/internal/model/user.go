@@ -38,6 +38,8 @@ type UserSettings struct {
 	RiskTolerance          string    `json:"risk_tolerance" gorm:"default:'MEDIUM';size:20"`
 	DefaultPositionSize    float64   `json:"default_position_size" gorm:"type:decimal(10,2);default:1000.00"`
 	MaxDailyLoss           float64   `json:"max_daily_loss" gorm:"type:decimal(10,2);default:500.00"`
+	TotalCapital           float64   `json:"total_capital" gorm:"type:decimal(14,2);default:0"`
+	AvailableCash          float64   `json:"available_cash" gorm:"type:decimal(14,2);default:0"`
 	NotificationPreferences string    `json:"notification_preferences" gorm:"type:jsonb;default:'{}'"`
 	TradingHours           string    `json:"trading_hours" gorm:"type:jsonb;default:'{\"start\": \"09:30\", \"end\": \"15:00\"}'"`
 	Timezone               string    `json:"timezone" gorm:"default:'Asia/Shanghai';size:50"`

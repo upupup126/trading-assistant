@@ -45,10 +45,26 @@ interface TradingAdvice {
   advice_summary: string;
 }
 
+interface StockHistoryItem {
+  date: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+}
+
+interface StockHistoryData {
+  symbol: string;
+  period: string;
+  data: StockHistoryItem[];
+}
+
 interface AIState {
   marketOverview: MarketOverview | null;
   marketAnalysis: MarketAnalysis | null;
   stockAnalyses: Record<string, StockAnalysis>;
+  stockHistories: Record<string, StockHistoryData>;
   riskAssessment: RiskAssessment | null;
   tradingAdvices: Record<string, TradingAdvice>;
   loadingStates: Record<string, boolean>;
@@ -57,6 +73,7 @@ interface AIState {
   getMarketOverview: () => Promise<void>;
   analyzeMarketTrend: (symbols?: string[]) => Promise<void>;
   analyzeStockOpportunity: (symbol: string) => Promise<void>;
+  getStockHistory: (symbol: string, period?: string) => Promise<void>;
   assessPortfolioRisk: (portfolio: Record<string, number>) => Promise<void>;
   generateTradingAdvice: (symbol: string, context?: object) => Promise<void>;
   clearError: () => void;
@@ -69,6 +86,7 @@ export const useAIStore = create<AIState>((set) => ({
   marketOverview: null,
   marketAnalysis: null,
   stockAnalyses: {},
+  stockHistories: {},
   riskAssessment: null,
   tradingAdvices: {},
   loadingStates: {},
@@ -105,6 +123,25 @@ export const useAIStore = create<AIState>((set) => ({
       const res = await api.analyzeStockOpportunity(symbol);
       const analysis = res.data.data?.ai_analysis || res.data.data;
       set((s) => ({ stockAnalyses: { ...s.stockAnalyses, [symbol]: analysis } }));
+    } catch (e: any) {
+      set({ error: e.message });
+    } finally {
+      setLoading(set, key, false);
+    }
+  },
+
+  getStockHistory: async (symbol, period = '1mo') => {
+    const key = `stockHistory_${symbol}_${period}`;
+    setLoading(set, key, true);
+    try {
+      const res = await api.getStockHistory(symbol, period);
+      const historyData = res.data.data || res.data;
+      set((s) => ({
+        stockHistories: {
+          ...s.stockHistories,
+          [`${symbol}_${period}`]: historyData,
+        },
+      }));
     } catch (e: any) {
       set({ error: e.message });
     } finally {

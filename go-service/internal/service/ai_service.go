@@ -169,6 +169,11 @@ func (s *AIService) GetStockQuote(ctx context.Context, symbol string) (*client.S
 	return s.aiClient.GetStockQuote(ctx, symbol)
 }
 
+// GetStockHistory 获取股票K线历史数据
+func (s *AIService) GetStockHistory(ctx context.Context, symbol string, period string) (*client.StockHistoryResponse, error) {
+	return s.aiClient.GetStockHistory(ctx, symbol, period)
+}
+
 // GetAnalysisHistory 获取用户分析历史
 func (s *AIService) GetAnalysisHistory(ctx context.Context, userID string, limit, offset int) ([]model.AIAnalysis, error) {
 	var analyses []model.AIAnalysis
@@ -193,4 +198,19 @@ func (s *AIService) GetAnalysisByID(ctx context.Context, analysisID string) (*mo
 // HealthCheck 检查AI服务健康状态
 func (s *AIService) HealthCheck(ctx context.Context) error {
 	return s.aiClient.HealthCheck(ctx)
+}
+
+// GetMinuteData 获取分时走势数据
+func (s *AIService) GetMinuteData(ctx context.Context, symbol string) (*client.MinuteDataResponse, error) {
+	return s.aiClient.GetMinuteData(ctx, symbol)
+}
+
+// GetSectorHotspot 获取概念板块热点轮动数据
+func (s *AIService) GetSectorHotspot(ctx context.Context, days int) (*client.SectorHotspotResponse, error) {
+	return s.aiClient.GetSectorHotspot(ctx, days)
+}
+
+// SearchStocks 在线搜索股票
+func (s *AIService) SearchStocks(ctx context.Context, query string, limit int) (*client.StockSearchResponse, error) {
+	return s.aiClient.SearchStocks(ctx, query, limit)
 }

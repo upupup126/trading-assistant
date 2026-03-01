@@ -6,15 +6,16 @@ import { Progress } from '@/components/ui/progress'
 import { useAIStore } from '@/stores/aiStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatNumber, formatPercent, getPriceChangeColor, getPriceChangeIcon } from '@/lib/utils'
+import KlineChart from '@/components/charts/KlineChart'
 import { 
   TrendingUp, 
   TrendingDown, 
   BarChart3, 
   Brain, 
   Shield, 
-  Zap,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Flame
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -22,10 +23,14 @@ export default function Dashboard() {
   const { 
     marketOverview, 
     marketAnalysis, 
+    sectorHotspot,
     getMarketOverview, 
     analyzeMarketTrend,
+    getSectorHotspot,
     loadingStates 
   } = useAIStore()
+  
+  const [selectedIndex, setSelectedIndex] = useState<string | null>(null)
   
   const [refreshing, setRefreshing] = useState(false)
 
@@ -38,7 +43,8 @@ export default function Dashboard() {
     try {
       await Promise.all([
         getMarketOverview(),
-        analyzeMarketTrend()
+        analyzeMarketTrend(),
+        getSectorHotspot(5)
       ])
     } catch (error) {
       console.error('Failed to load initial data:', error)
@@ -56,8 +62,8 @@ export default function Dashboard() {
 
   const getSentimentColor = (sentiment: string) => {
     switch (sentiment) {
-      case 'BULLISH': return 'text-green-500'
-      case 'BEARISH': return 'text-red-500'
+      case 'BULLISH': return 'text-red-500'
+      case 'BEARISH': return 'text-green-500'
       default: return 'text-yellow-500'
     }
   }
@@ -175,27 +181,47 @@ export default function Dashboard() {
                   <BarChart3 className="w-5 h-5 mr-2 text-green-400" />
                   主要指数
                 </CardTitle>
+                <p className="text-xs text-slate-500 mt-1">点击指数查看K线走势</p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(marketOverview.indices).map(([name, data]) => (
-                    <div key={name} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-white">{name}</p>
-                        <p className="text-2xl font-bold text-white">
-                          {formatNumber(data.price, 2)}
-                        </p>
+                  {Object.entries(marketOverview.indices).map(([name, data]) => {
+                    // 指数名到代码映射
+                    const indexSymbolMap: Record<string, string> = {
+                      '上证指数': '000001.SH',
+                      '深证成指': '399001.SZ',
+                      '创业板指': '399006.SZ',
+                      '沪深300': '000300.SH',
+                      '中证500': '000905.SH',
+                      '科创50': '000688.SH',
+                    }
+                    const indexCode = indexSymbolMap[name] || ''
+                    const isSelected = selectedIndex === indexCode
+                    return (
+                      <div
+                        key={name}
+                        className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                          isSelected ? 'bg-blue-600/20 border border-blue-500/40' : 'bg-slate-800/50 hover:bg-slate-700/50'
+                        }`}
+                        onClick={() => indexCode && setSelectedIndex(isSelected ? null : indexCode)}
+                      >
+                        <div>
+                          <p className="font-medium text-white">{name}</p>
+                          <p className="text-2xl font-bold text-white">
+                            {formatNumber(data.price, 2)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-medium ${getPriceChangeColor(data.change)}`}>
+                            {getPriceChangeIcon(data.change)} {formatNumber(data.change, 2)}
+                          </p>
+                          <p className={`text-sm ${getPriceChangeColor(data.change)}`}>
+                            {formatPercent(data.change_percent, 2)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className={`font-medium ${getPriceChangeColor(data.change)}`}>
-                          {getPriceChangeIcon(data.change)} {formatNumber(data.change, 2)}
-                        </p>
-                        <p className={`text-sm ${getPriceChangeColor(data.change)}`}>
-                          {formatPercent(data.change_percent, 2)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -211,13 +237,13 @@ export default function Dashboard() {
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-slate-800/50 rounded-lg">
-                    <p className="text-green-400 text-2xl font-bold">
+                    <p className="text-red-400 text-2xl font-bold">
                       {marketOverview.market_stats.advancing_stocks}
                     </p>
                     <p className="text-sm text-slate-400">上涨股票</p>
                   </div>
                   <div className="text-center p-4 bg-slate-800/50 rounded-lg">
-                    <p className="text-red-400 text-2xl font-bold">
+                    <p className="text-green-400 text-2xl font-bold">
                       {marketOverview.market_stats.declining_stocks}
                     </p>
                     <p className="text-sm text-slate-400">下跌股票</p>
@@ -240,28 +266,64 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* 板块表现 */}
-        {marketOverview?.sector_performance && (
+        {/* 概念板块热点轮动 */}
+        {sectorHotspot && sectorHotspot.data.length > 0 && (
           <Card className="trading-card">
             <CardHeader>
               <CardTitle className="text-white flex items-center">
-                <Zap className="w-5 h-5 mr-2 text-yellow-400" />
-                板块表现
+                <Flame className="w-5 h-5 mr-2 text-orange-400" />
+                概念板块热点轮动
               </CardTitle>
+              <p className="text-xs text-slate-500 mt-1">最近{sectorHotspot.days}个交易日概念板块涨幅排名 Top 9</p>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                {Object.entries(marketOverview.sector_performance).map(([sector, performance]) => (
-                  <div key={sector} className="text-center p-3 bg-slate-800/50 rounded-lg">
-                    <p className="text-white font-medium mb-1">{sector}</p>
-                    <p className={`text-lg font-bold ${getPriceChangeColor(performance)}`}>
-                      {formatPercent(performance * 100, 2)}
-                    </p>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700">
+                      <th className="text-left text-slate-400 py-2 px-2 w-10">#</th>
+                      {sectorHotspot.data.map((day) => (
+                        <th key={day.date} className="text-center text-slate-400 py-2 px-2 min-w-[130px]">
+                          {day.date.slice(5)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 9 }, (_, rank) => (
+                      <tr key={rank} className="border-b border-slate-800 hover:bg-slate-800/30">
+                        <td className="py-2 px-2 text-slate-500 font-mono text-xs">{rank + 1}</td>
+                        {sectorHotspot.data.map((day) => {
+                          const item = day.rankings[rank]
+                          if (!item) return <td key={day.date} className="py-2 px-2 text-center text-slate-600">-</td>
+                          const isUp = item.change_pct >= 0
+                          return (
+                            <td key={day.date} className="py-1.5 px-2">
+                              <div className={`rounded px-2 py-1 text-center ${
+                                isUp ? 'bg-red-500/10' : 'bg-green-500/10'
+                              }`}>
+                                <div className="text-white text-xs font-medium truncate" title={item.name}>
+                                  {item.name}
+                                </div>
+                                <div className={`text-xs font-mono ${isUp ? 'text-red-400' : 'text-green-400'}`}>
+                                  {isUp ? '+' : ''}{item.change_pct.toFixed(2)}%
+                                </div>
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* 指数K线图 */}
+        {selectedIndex && (
+          <KlineChart symbol={selectedIndex} title={`${selectedIndex} K线走势`} />
         )}
 
         {/* 快速操作 */}

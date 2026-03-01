@@ -36,10 +36,10 @@ export function formatLargeNumber(num: number): string {
   return formatNumber(num)
 }
 
-// 获取价格变化颜色类名
+// 获取价格变化颜色类名（A股标准：红涨绿跌）
 export function getPriceChangeColor(change: number): string {
-  if (change > 0) return 'text-green-500'
-  if (change < 0) return 'text-red-500'
+  if (change > 0) return 'text-red-500'
+  if (change < 0) return 'text-green-500'
   return 'text-gray-500'
 }
 

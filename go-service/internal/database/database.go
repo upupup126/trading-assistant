@@ -84,11 +84,15 @@ func autoMigrate(db *gorm.DB) error {
 		&model.TradingPlan{},
 		&model.TradeExecution{},
 		&model.Position{},
+		&model.AccountFund{},
 		&model.TradingJournal{},
 		&model.AIAnalysis{},
 		&model.SmartAlert{},
 		&model.AlertHistory{},
 		&model.SystemConfig{},
+		&model.TradingStrategy{},
+		&model.StrategyAlert{},
+		&model.BacktestResult{},
 	)
 }
 

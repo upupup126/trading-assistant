@@ -10,6 +10,7 @@ import AIAnalysis from '@/pages/AIAnalysis'
 import TradingPlans from '@/pages/TradingPlans'
 import RiskManagement from '@/pages/RiskManagement'
 import Alerts from '@/pages/Alerts'
+import Portfolio from '@/pages/Portfolio'
 import Layout from '@/components/Layout'
 
 // 创建React Query客户端
@@ -132,6 +133,17 @@ function App() {
                 <ProtectedRoute>
                   <Layout>
                     <Alerts />
+                  </Layout>
+                </ProtectedRoute>
+              } 
+            />
+
+            <Route 
+              path="/portfolio" 
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Portfolio />
                   </Layout>
                 </ProtectedRoute>
               } 

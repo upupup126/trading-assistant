@@ -13,6 +13,8 @@ type Handlers struct {
 	Health    *handler.HealthHandler
 	WebSocket *handler.WebSocketHandler
 	AI        *AIHandler
+	Trading   *handler.TradingHandler
+	Strategy  *handler.StrategyHandler
 }
 
 func SetupRoutes(router *gin.Engine, cfg *config.Config, handlers *Handlers) {
@@ -63,35 +65,31 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, handlers *Handlers) {
 			trading := protected.Group("/trading")
 			trading.Use(middleware.TradingPermission(), middleware.RiskControl())
 			{
-				trading.GET("/plans", func(c *gin.Context) {
-					// TODO: 实现获取交易计划
-					c.JSON(200, gin.H{"message": "Get trading plans - TODO"})
-				})
-				trading.POST("/plans", func(c *gin.Context) {
-					// TODO: 实现创建交易计划
-					c.JSON(200, gin.H{"message": "Create trading plan - TODO"})
-				})
-				trading.PUT("/plans/:id", func(c *gin.Context) {
-					// TODO: 实现更新交易计划
-					c.JSON(200, gin.H{"message": "Update trading plan - TODO"})
-				})
-				trading.DELETE("/plans/:id", func(c *gin.Context) {
-					// TODO: 实现删除交易计划
-					c.JSON(200, gin.H{"message": "Delete trading plan - TODO"})
-				})
-				
-				trading.GET("/positions", func(c *gin.Context) {
-					// TODO: 实现获取持仓
-					c.JSON(200, gin.H{"message": "Get positions - TODO"})
-				})
-				trading.POST("/execute", func(c *gin.Context) {
-					// TODO: 实现执行交易
-					c.JSON(200, gin.H{"message": "Execute trade - TODO"})
-				})
-				trading.GET("/history", func(c *gin.Context) {
-					// TODO: 实现获取交易历史
-					c.JSON(200, gin.H{"message": "Get trade history - TODO"})
-				})
+				trading.GET("/positions", handlers.Trading.GetPositions)
+				trading.POST("/positions", handlers.Trading.AddPosition)
+				trading.DELETE("/positions/:id", handlers.Trading.DeletePosition)
+				trading.POST("/execute", handlers.Trading.RecordTrade)
+				trading.GET("/history", handlers.Trading.GetTradeHistory)
+				trading.GET("/fund", handlers.Trading.GetFund)
+				trading.PUT("/fund", handlers.Trading.UpdateFund)
+				trading.GET("/portfolio", handlers.Trading.GetPortfolioSummary)
+				trading.GET("/stocks/search", handlers.Trading.SearchStocks)
+
+			// 交易策略管理
+			trading.GET("/strategies", handlers.Strategy.GetStrategies)
+			trading.POST("/strategies", handlers.Strategy.CreateStrategy)
+			trading.PUT("/strategies/:id", handlers.Strategy.UpdateStrategy)
+			trading.DELETE("/strategies/:id", handlers.Strategy.DeleteStrategy)
+			trading.GET("/strategies/builtin", handlers.Strategy.GetBuiltinStrategies)
+
+			// 策略提醒
+			trading.GET("/strategy-alerts", handlers.Strategy.GetAlerts)
+			trading.PUT("/strategy-alerts/:id/read", handlers.Strategy.MarkAlertRead)
+			trading.PUT("/strategy-alerts/read-all", handlers.Strategy.MarkAllAlertsRead)
+			trading.GET("/strategy-alerts/unread-count", handlers.Strategy.GetUnreadAlertCount)
+
+			// 回测
+			trading.POST("/backtest", handlers.Strategy.RunBacktest)
 			}
 			
 			// AI分析相关
@@ -104,6 +102,14 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, handlers *Handlers) {
 				// 个股分析
 				ai.POST("/stock-opportunity", handlers.AI.AnalyzeStockOpportunity)
 				ai.GET("/stock/:symbol/quote", handlers.AI.GetStockQuote)
+				ai.GET("/stock/:symbol/history", handlers.AI.GetStockHistory)
+			ai.GET("/stock/:symbol/minute", handlers.AI.GetMinuteData)
+
+			// 在线搜索股票
+			ai.GET("/stocks/search", handlers.AI.SearchStocksOnline)
+
+			// 板块热点轮动
+			ai.GET("/sector/hotspot", handlers.AI.GetSectorHotspot)
 
 				// 风险评估
 				ai.POST("/risk-assessment", handlers.AI.AssessPortfolioRisk)

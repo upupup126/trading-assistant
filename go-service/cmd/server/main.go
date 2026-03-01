@@ -47,10 +47,17 @@ func main() {
 	
 	// 初始化仓库层
 	userRepo := repository.NewUserRepository(db.DB)
+	tradingRepo := repository.NewTradingRepository(db.DB)
+	strategyRepo := repository.NewStrategyRepository(db.DB)
 	
 	// 初始化服务层
 	authService := service.NewAuthService(userRepo, cfg.JWT.Secret)
 	aiService := service.NewAIService(aiClient, db.DB)
+	tradingService := service.NewTradingService(tradingRepo, db.DB)
+	strategyService := service.NewStrategyService(strategyRepo, cfg.AI.PythonServiceURL)
+	
+	// 启动策略信号检查定时器
+	strategyService.StartScheduler()
 	
 	// 初始化处理器
 	handlers := &api.Handlers{
@@ -58,6 +65,8 @@ func main() {
 		Health:    handler.NewHealthHandler(db),
 		WebSocket: handler.NewWebSocketHandler(wsHub),
 		AI:        api.NewAIHandler(aiService),
+		Trading:   handler.NewTradingHandler(tradingService),
+		Strategy:  handler.NewStrategyHandler(strategyService),
 	}
 	
 	// 创建路由器

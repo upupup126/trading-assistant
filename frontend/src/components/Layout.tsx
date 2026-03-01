@@ -22,7 +22,8 @@ import {
   TrendingUp,
   Shield,
   Bell,
-  Home
+  Home,
+  Briefcase
 } from 'lucide-react'
 
 interface LayoutProps {
@@ -59,6 +60,12 @@ export default function Layout({ children }: LayoutProps) {
       href: '/dashboard',
       icon: Home,
       description: '总览和快速操作'
+    },
+    {
+      name: '我的持仓',
+      href: '/portfolio',
+      icon: Briefcase,
+      description: '持仓、交易记录、资金'
     },
     {
       name: 'AI分析',

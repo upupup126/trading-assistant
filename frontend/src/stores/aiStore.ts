@@ -6,7 +6,10 @@ import {
   RiskAssessment, 
   TradingAdvice,
   MarketOverview,
-  StockQuote 
+  StockQuote,
+  StockHistoryResponse,
+  MinuteDataResponse,
+  SectorHotspotResponse
 } from '@/lib/api'
 
 interface AIState {
@@ -17,6 +20,15 @@ interface AIState {
   // 个股分析
   stockAnalyses: Record<string, StockAnalysis>
   stockQuotes: Record<string, StockQuote>
+  
+  // K线历史数据
+  stockHistories: Record<string, StockHistoryResponse>
+  
+  // 分时数据
+  minuteData: Record<string, MinuteDataResponse>
+  
+  // 板块热点轮动
+  sectorHotspot: SectorHotspotResponse | null
   
   // 风险评估
   riskAssessment: RiskAssessment | null
@@ -44,6 +56,13 @@ interface AIActions {
   // 个股分析
   analyzeStockOpportunity: (symbol: string, userContext?: Record<string, any>) => Promise<StockAnalysis>
   getStockQuote: (symbol: string) => Promise<StockQuote>
+  getStockHistory: (symbol: string, period?: string) => Promise<StockHistoryResponse>
+  
+  // 分时数据
+  getMinuteData: (symbol: string) => Promise<MinuteDataResponse>
+  
+  // 板块热点轮动
+  getSectorHotspot: (days?: number) => Promise<SectorHotspotResponse>
   
   // 风险评估
   assessPortfolioRisk: (portfolio: Record<string, number>) => Promise<RiskAssessment>
@@ -66,6 +85,9 @@ export const useAIStore = create<AIState & AIActions>((set, get) => ({
   marketOverview: null,
   stockAnalyses: {},
   stockQuotes: {},
+  stockHistories: {},
+  minuteData: {},
+  sectorHotspot: null,
   riskAssessment: null,
   tradingAdvices: {},
   analysisHistory: [],
@@ -168,6 +190,80 @@ export const useAIStore = create<AIState & AIActions>((set, get) => ({
         errors: { ...state.errors, [`stockQuote_${symbol}`]: errorMessage }
       }))
       get().setLoading(`stockQuote_${symbol}`, false)
+      throw error
+    }
+  },
+
+  getStockHistory: async (symbol: string, period: string = '1mo') => {
+    const key = `stockHistory_${symbol}_${period}`
+    try {
+      get().setLoading(key, true)
+      
+      const history = await api.getStockHistory(symbol, period)
+      
+      set(state => ({
+        stockHistories: {
+          ...state.stockHistories,
+          [`${symbol}_${period}`]: history
+        }
+      }))
+      get().setLoading(key, false)
+      
+      return history
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || '获取K线数据失败'
+      set(state => ({
+        errors: { ...state.errors, [key]: errorMessage }
+      }))
+      get().setLoading(key, false)
+      throw error
+    }
+  },
+
+  // 分时数据
+  getMinuteData: async (symbol: string) => {
+    const key = `minuteData_${symbol}`
+    try {
+      get().setLoading(key, true)
+      
+      const data = await api.getMinuteData(symbol)
+      
+      set(state => ({
+        minuteData: {
+          ...state.minuteData,
+          [symbol]: data
+        }
+      }))
+      get().setLoading(key, false)
+      
+      return data
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || '获取分时数据失败'
+      set(state => ({
+        errors: { ...state.errors, [key]: errorMessage }
+      }))
+      get().setLoading(key, false)
+      throw error
+    }
+  },
+
+  // 板块热点轮动
+  getSectorHotspot: async (days: number = 5) => {
+    try {
+      get().setLoading('sectorHotspot', true)
+      
+      const data = await api.getSectorHotspot(days)
+      
+      set({ sectorHotspot: data })
+      get().setLoading('sectorHotspot', false)
+      
+      return data
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || '获取板块热点数据失败'
+      set(state => ({
+        errors: { ...state.errors, sectorHotspot: errorMessage }
+      }))
+      get().setLoading('sectorHotspot', false)
       throw error
     }
   },

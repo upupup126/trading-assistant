@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS positions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE(user_id, stock_id)
+    UNIQUE(user_id, stock_id, account)
 );
 
 -- AI分析记录表

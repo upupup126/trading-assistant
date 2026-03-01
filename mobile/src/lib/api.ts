@@ -48,6 +48,8 @@ export const api = {
     apiClient.post('/ai/trading-advice', { symbol, plan_context: planContext }),
   getStockQuote: (symbol: string) =>
     apiClient.get(`/ai/stock/${symbol}/quote`),
+  getStockHistory: (symbol: string, period: string = '1mo') =>
+    apiClient.get(`/ai/stock/${symbol}/history?period=${period}`),
   getAnalysisHistory: (limit = 10, offset = 0) =>
     apiClient.get(`/ai/history?limit=${limit}&offset=${offset}`),
   healthCheck: () => apiClient.get('/ai/health'),

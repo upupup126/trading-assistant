@@ -192,6 +192,28 @@ func (h *AIHandler) GetStockQuote(c *gin.Context) {
 	})
 }
 
+// GetStockHistory 获取股票K线历史数据
+func (h *AIHandler) GetStockHistory(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "股票代码不能为空"})
+		return
+	}
+
+	period := c.DefaultQuery("period", "1mo")
+
+	history, err := h.aiService.GetStockHistory(c.Request.Context(), symbol, period)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取K线数据失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    history,
+	})
+}
+
 // GetAnalysisHistory 获取分析历史
 func (h *AIHandler) GetAnalysisHistory(c *gin.Context) {
 	userID := getAIUserID(c)
@@ -264,5 +286,78 @@ func (h *AIHandler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "AI服务运行正常",
+	})
+}
+
+// GetMinuteData 获取股票分时走势数据
+func (h *AIHandler) GetMinuteData(c *gin.Context) {
+	symbol := c.Param("symbol")
+	if symbol == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "股票代码不能为空"})
+		return
+	}
+
+	data, err := h.aiService.GetMinuteData(c.Request.Context(), symbol)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取分时数据失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    data,
+	})
+}
+
+// SearchStocksOnline 在线搜索股票（通过 Python 新浪 API）
+func (h *AIHandler) SearchStocksOnline(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Search query parameter 'q' is required",
+		})
+		return
+	}
+
+	limit := 10
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 20 {
+			limit = l
+		}
+	}
+
+	result, err := h.aiService.SearchStocks(c.Request.Context(), query, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "搜索股票失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result.Results,
+	})
+}
+
+// GetSectorHotspot 获取概念板块热点轮动数据
+func (h *AIHandler) GetSectorHotspot(c *gin.Context) {
+	daysStr := c.DefaultQuery("days", "5")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days < 1 || days > 30 {
+		days = 5
+	}
+
+	data, err := h.aiService.GetSectorHotspot(c.Request.Context(), days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取板块热点数据失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    data,
 	})
 }

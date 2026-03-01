@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from .api import analysis, health
 from .api.ai_analysis import router as ai_analysis_router
+from .api.strategy import router as strategy_router
 from .config import get_settings, validate_environment
 from .services.ai_analyst import AIAnalystService
 
@@ -149,6 +150,12 @@ def setup_routes(app: FastAPI):
     app.include_router(
         ai_analysis_router,
         tags=["AI智能分析"]
+    )
+    
+    # 策略引擎API
+    app.include_router(
+        strategy_router,
+        tags=["策略引擎"]
     )
     
     # 根路径

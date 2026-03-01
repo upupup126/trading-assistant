@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAIStore } from '../../src/stores/aiStore';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
+import KlineChart from '../../src/components/KlineChart';
 
 type TabKey = 'market' | 'stock' | 'risk' | 'advice';
 
@@ -187,6 +188,14 @@ export default function AIAnalysisScreen() {
                   </>
                 )}
               </Card>
+            )}
+
+            {/* 个股 K 线图 */}
+            {currentStock && stockSymbol.trim() && (
+              <KlineChart
+                symbol={stockSymbol.trim().toUpperCase()}
+                title={`${stockSymbol.trim().toUpperCase()} K线走势`}
+              />
             )}
           </>
         )}

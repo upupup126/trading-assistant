@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useAIStore } from '../../src/stores/aiStore';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
+import KlineChart from '../../src/components/KlineChart';
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   return <View style={[styles.card, style]}>{children}</View>;
@@ -37,6 +38,7 @@ export default function DashboardScreen() {
   } = useAIStore();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     await Promise.all([getMarketOverview(), analyzeMarketTrend()]);
@@ -134,24 +136,47 @@ export default function DashboardScreen() {
             <View style={styles.cardHeader}>
               <Ionicons name="bar-chart-outline" size={18} color={Colors.primary} />
               <Text style={styles.cardTitle}>主要指数</Text>
+              <Text style={styles.hintText}>点击查看K线</Text>
             </View>
-            {indices.map((idx: any, i: number) => (
-              <View key={i} style={styles.indexRow}>
-                <Text style={styles.indexName} numberOfLines={1}>{idx.name}</Text>
-                <Text style={styles.indexPrice}>
-                  {typeof idx.price === 'number' ? idx.price.toFixed(2) : idx.price}
-                </Text>
-                <Text
-                  style={[
-                    styles.indexChange,
-                    { color: (idx.change_percent ?? 0) >= 0 ? Colors.success : Colors.danger },
-                  ]}
+            {indices.map((idx: any, i: number) => {
+              const indexSymbolMap: Record<string, string> = {
+                '上证指数': '000001.SH',
+                '深证成指': '399001.SZ',
+                '创业板指': '399006.SZ',
+                '沪深300': '000300.SH',
+                '中证500': '000905.SH',
+                '科创50': '000688.SH',
+              };
+              const indexCode = indexSymbolMap[idx.name] || '';
+              const isSelected = selectedIndex === indexCode;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.indexRow, isSelected && styles.indexRowSelected]}
+                  activeOpacity={0.7}
+                  onPress={() => indexCode && setSelectedIndex(isSelected ? null : indexCode)}
                 >
-                  {(idx.change_percent ?? 0) >= 0 ? '+' : ''}{(idx.change_percent ?? 0).toFixed(2)}%
-                </Text>
-              </View>
-            ))}
+                  <Text style={styles.indexName} numberOfLines={1}>{idx.name}</Text>
+                  <Text style={styles.indexPrice}>
+                    {typeof idx.price === 'number' ? idx.price.toFixed(2) : idx.price}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.indexChange,
+                      { color: (idx.change_percent ?? 0) >= 0 ? Colors.success : Colors.danger },
+                    ]}
+                  >
+                    {(idx.change_percent ?? 0) >= 0 ? '+' : ''}{(idx.change_percent ?? 0).toFixed(2)}%
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </Card>
+        )}
+
+        {/* 指数 K 线图 */}
+        {selectedIndex && (
+          <KlineChart symbol={selectedIndex} title={`${selectedIndex} K线走势`} />
         )}
 
         {/* 市场统计 */}
@@ -257,6 +282,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   cardTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, flex: 1 },
+  hintText: { fontSize: FontSize.xs, color: Colors.textMuted },
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
@@ -281,7 +307,13 @@ const styles = StyleSheet.create({
   insightText: { fontSize: FontSize.sm, color: Colors.textSecondary, flex: 1, lineHeight: 18 },
   indexRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.xs,
+    borderBottomWidth: 1, borderBottomColor: Colors.border, borderRadius: 6,
+  },
+  indexRowSelected: {
+    backgroundColor: Colors.primary + '18',
+    borderColor: Colors.primary + '40',
+    borderWidth: 1,
   },
   indexName: { flex: 1, fontSize: FontSize.sm, color: Colors.text },
   indexPrice: { fontSize: FontSize.sm, color: Colors.text, fontWeight: '600', marginRight: Spacing.md },

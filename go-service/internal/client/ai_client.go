@@ -245,6 +245,34 @@ func (c *AIClient) GetStockQuote(ctx context.Context, symbol string) (*StockQuot
 	return &result, nil
 }
 
+// StockHistoryItem K线历史数据项
+type StockHistoryItem struct {
+	Date   string  `json:"date"`
+	Open   float64 `json:"open"`
+	Close  float64 `json:"close"`
+	High   float64 `json:"high"`
+	Low    float64 `json:"low"`
+	Volume int64   `json:"volume"`
+}
+
+// StockHistoryResponse K线历史数据响应
+type StockHistoryResponse struct {
+	Symbol string             `json:"symbol"`
+	Period string             `json:"period"`
+	Data   []StockHistoryItem `json:"data"`
+}
+
+// GetStockHistory 获取股票K线历史数据
+func (c *AIClient) GetStockHistory(ctx context.Context, symbol string, period string) (*StockHistoryResponse, error) {
+	var result StockHistoryResponse
+	path := fmt.Sprintf("/api/ai/stock/%s/history?period=%s", symbol, period)
+	err := c.doRequest(ctx, "GET", path, nil, &result)
+	if err != nil {
+		return nil, fmt.Errorf("get stock history: %w", err)
+	}
+	return &result, nil
+}
+
 // HealthCheck 健康检查
 func (c *AIClient) HealthCheck(ctx context.Context) error {
 	var result map[string]interface{}
@@ -253,4 +281,84 @@ func (c *AIClient) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("health check: %w", err)
 	}
 	return nil
+}
+
+// MinuteDataItem 分时数据项
+type MinuteDataItem struct {
+	Time   string `json:"time"`
+	Price  float64 `json:"price"`
+	Volume int64   `json:"volume"`
+}
+
+// MinuteDataResponse 分时数据响应
+type MinuteDataResponse struct {
+	Symbol    string           `json:"symbol"`
+	TradeDate string           `json:"trade_date"`
+	PrevClose float64          `json:"prev_close"`
+	IsTrading bool             `json:"is_trading"`
+	Minutes   []MinuteDataItem `json:"minutes"`
+}
+
+// GetMinuteData 获取分时走势数据
+func (c *AIClient) GetMinuteData(ctx context.Context, symbol string) (*MinuteDataResponse, error) {
+	var result MinuteDataResponse
+	path := fmt.Sprintf("/api/ai/stock/%s/minute", symbol)
+	err := c.doRequest(ctx, "GET", path, nil, &result)
+	if err != nil {
+		return nil, fmt.Errorf("get minute data: %w", err)
+	}
+	return &result, nil
+}
+
+// SectorRankingItem 板块排名项
+type SectorRankingItem struct {
+	Name      string  `json:"name"`
+	ChangePct float64 `json:"change_pct"`
+}
+
+// SectorHotspotDay 单日板块热点
+type SectorHotspotDay struct {
+	Date     string              `json:"date"`
+	Rankings []SectorRankingItem `json:"rankings"`
+}
+
+// SectorHotspotResponse 板块热点轮动响应
+type SectorHotspotResponse struct {
+	Days      int                 `json:"days"`
+	Data      []SectorHotspotDay  `json:"data"`
+	Timestamp string              `json:"timestamp"`
+}
+
+// GetSectorHotspot 获取概念板块热点轮动数据
+func (c *AIClient) GetSectorHotspot(ctx context.Context, days int) (*SectorHotspotResponse, error) {
+	var result SectorHotspotResponse
+	path := fmt.Sprintf("/api/ai/sector/hotspot?days=%d", days)
+	err := c.doRequest(ctx, "GET", path, nil, &result)
+	if err != nil {
+		return nil, fmt.Errorf("get sector hotspot: %w", err)
+	}
+	return &result, nil
+}
+
+// StockSearchResultItem 股票搜索结果项
+type StockSearchResultItem struct {
+	Symbol string `json:"symbol"`
+	Name   string `json:"name"`
+}
+
+// StockSearchResponse 股票搜索响应
+type StockSearchResponse struct {
+	Query   string                  `json:"query"`
+	Results []StockSearchResultItem `json:"results"`
+}
+
+// SearchStocks 在线搜索股票（通过 Python 服务调用新浪 API）
+func (c *AIClient) SearchStocks(ctx context.Context, query string, limit int) (*StockSearchResponse, error) {
+	var result StockSearchResponse
+	path := fmt.Sprintf("/api/ai/stocks/search?q=%s&limit=%d", query, limit)
+	err := c.doRequest(ctx, "GET", path, nil, &result)
+	if err != nil {
+		return nil, fmt.Errorf("search stocks: %w", err)
+	}
+	return &result, nil
 }

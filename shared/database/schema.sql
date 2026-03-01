@@ -27,6 +27,8 @@ CREATE TABLE user_settings (
     risk_tolerance VARCHAR(20) DEFAULT 'MEDIUM', -- LOW, MEDIUM, HIGH
     default_position_size DECIMAL(10,2) DEFAULT 1000.00,
     max_daily_loss DECIMAL(10,2) DEFAULT 500.00,
+    total_capital DECIMAL(14,2) DEFAULT 0, -- 总资金
+    available_cash DECIMAL(14,2) DEFAULT 0, -- 可用现金
     notification_preferences JSONB DEFAULT '{}',
     trading_hours JSONB DEFAULT '{"start": "09:30", "end": "15:00"}',
     timezone VARCHAR(50) DEFAULT 'Asia/Shanghai',
