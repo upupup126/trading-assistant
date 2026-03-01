@@ -1,12 +1,6 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
-import api from '../lib/api';
-
-interface User {
-  id: string;
-  username: string;
-  email: string;
-}
+import { api, User } from '../lib/api';
 
 interface AuthState {
   user: User | null;
@@ -22,7 +16,7 @@ interface AuthState {
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isAuthenticated: false,
@@ -32,8 +26,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (username, password) => {
     set({ loading: true, error: null });
     try {
-      const res = await api.login({ username, password });
-      const { user, tokens } = res.data.data;
+      const { user, tokens } = await api.login({ username, password });
       const token = tokens.access_token;
       await SecureStore.setItemAsync('auth_token', token);
       set({ user, token, isAuthenticated: true, loading: false });
@@ -59,17 +52,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    try {
-      await api.logout();
-    } catch {}
+    try { await api.logout(); } catch {}
     await SecureStore.deleteItemAsync('auth_token');
     set({ user: null, token: null, isAuthenticated: false });
   },
 
   getProfile: async () => {
     try {
-      const res = await api.getProfile();
-      set({ user: res.data.data });
+      const user = await api.getProfile();
+      set({ user });
     } catch {}
   },
 
@@ -78,8 +69,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!token) return;
     set({ token, loading: true });
     try {
-      const res = await api.getProfile();
-      set({ user: res.data.data, isAuthenticated: true, loading: false });
+      const user = await api.getProfile();
+      set({ user, isAuthenticated: true, loading: false });
     } catch {
       await SecureStore.deleteItemAsync('auth_token');
       set({ token: null, loading: false });

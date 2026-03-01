@@ -1,70 +1,19 @@
 import { create } from 'zustand';
-import api from '../lib/api';
-
-interface MarketOverview {
-  indices: any[];
-  market_stats: any;
-  sector_performance: any[];
-  timestamp: string;
-}
-
-interface MarketAnalysis {
-  market_sentiment: string;
-  hot_sectors: string[];
-  key_insights: string[];
-  market_summary: string;
-  confidence_score: number;
-}
-
-interface StockAnalysis {
-  recommendation: string;
-  target_price_range: any;
-  key_factors: string[];
-  risk_level: string;
-  opportunity_score: number;
-  analysis_summary: string;
-}
-
-interface RiskAssessment {
-  portfolio_risk_level: string;
-  risk_score: number;
-  diversification_score: number;
-  risk_factors: string[];
-  recommendations: string[];
-  risk_summary: string;
-}
-
-interface TradingAdvice {
-  action: string;
-  entry_price_range: any;
-  stop_loss: number;
-  take_profit: number;
-  position_size_suggestion: string;
-  reasoning: string[];
-  risk_reward_ratio: number;
-  advice_summary: string;
-}
-
-interface StockHistoryItem {
-  date: string;
-  open: number;
-  close: number;
-  high: number;
-  low: number;
-  volume: number;
-}
-
-interface StockHistoryData {
-  symbol: string;
-  period: string;
-  data: StockHistoryItem[];
-}
+import {
+  api,
+  MarketOverview,
+  MarketAnalysis,
+  StockAnalysis,
+  RiskAssessment,
+  TradingAdvice,
+  StockHistoryResponse,
+} from '../lib/api';
 
 interface AIState {
   marketOverview: MarketOverview | null;
   marketAnalysis: MarketAnalysis | null;
   stockAnalyses: Record<string, StockAnalysis>;
-  stockHistories: Record<string, StockHistoryData>;
+  stockHistories: Record<string, StockHistoryResponse>;
   riskAssessment: RiskAssessment | null;
   tradingAdvices: Record<string, TradingAdvice>;
   loadingStates: Record<string, boolean>;
@@ -75,7 +24,7 @@ interface AIState {
   analyzeStockOpportunity: (symbol: string) => Promise<void>;
   getStockHistory: (symbol: string, period?: string) => Promise<void>;
   assessPortfolioRisk: (portfolio: Record<string, number>) => Promise<void>;
-  generateTradingAdvice: (symbol: string, context?: object) => Promise<void>;
+  generateTradingAdvice: (symbol: string, context?: Record<string, any>) => Promise<void>;
   clearError: () => void;
 }
 
@@ -95,8 +44,8 @@ export const useAIStore = create<AIState>((set) => ({
   getMarketOverview: async () => {
     setLoading(set, 'marketOverview', true);
     try {
-      const res = await api.getMarketOverview();
-      set({ marketOverview: res.data.data });
+      const data = await api.getMarketOverview();
+      set({ marketOverview: data });
     } catch (e: any) {
       set({ error: e.message });
     } finally {
@@ -107,8 +56,8 @@ export const useAIStore = create<AIState>((set) => ({
   analyzeMarketTrend: async (symbols = ['000001.SZ', '600519.SH']) => {
     setLoading(set, 'marketTrend', true);
     try {
-      const res = await api.analyzeMarketTrend(symbols);
-      set({ marketAnalysis: res.data.data?.ai_analysis || res.data.data });
+      const data = await api.analyzeMarketTrend(symbols);
+      set({ marketAnalysis: data });
     } catch (e: any) {
       set({ error: e.message });
     } finally {
@@ -120,8 +69,7 @@ export const useAIStore = create<AIState>((set) => ({
     const key = `stockAnalysis_${symbol}`;
     setLoading(set, key, true);
     try {
-      const res = await api.analyzeStockOpportunity(symbol);
-      const analysis = res.data.data?.ai_analysis || res.data.data;
+      const analysis = await api.analyzeStockOpportunity(symbol);
       set((s) => ({ stockAnalyses: { ...s.stockAnalyses, [symbol]: analysis } }));
     } catch (e: any) {
       set({ error: e.message });
@@ -134,8 +82,7 @@ export const useAIStore = create<AIState>((set) => ({
     const key = `stockHistory_${symbol}_${period}`;
     setLoading(set, key, true);
     try {
-      const res = await api.getStockHistory(symbol, period);
-      const historyData = res.data.data || res.data;
+      const historyData = await api.getStockHistory(symbol, period);
       set((s) => ({
         stockHistories: {
           ...s.stockHistories,
@@ -152,8 +99,8 @@ export const useAIStore = create<AIState>((set) => ({
   assessPortfolioRisk: async (portfolio) => {
     setLoading(set, 'riskAssessment', true);
     try {
-      const res = await api.assessPortfolioRisk(portfolio);
-      set({ riskAssessment: res.data.data?.ai_analysis || res.data.data });
+      const data = await api.assessPortfolioRisk(portfolio);
+      set({ riskAssessment: data });
     } catch (e: any) {
       set({ error: e.message });
     } finally {
@@ -165,8 +112,7 @@ export const useAIStore = create<AIState>((set) => ({
     const key = `tradingAdvice_${symbol}`;
     setLoading(set, key, true);
     try {
-      const res = await api.generateTradingAdvice(symbol, context);
-      const advice = res.data.data?.ai_analysis || res.data.data;
+      const advice = await api.generateTradingAdvice(symbol, context);
       set((s) => ({ tradingAdvices: { ...s.tradingAdvices, [symbol]: advice } }));
     } catch (e: any) {
       set({ error: e.message });

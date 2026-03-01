@@ -1,199 +1,153 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAIStore } from '../../src/stores/aiStore';
+import { useStrategyStore } from '../../src/stores/strategyStore';
 import { Colors, Spacing, FontSize, BorderRadius } from '../../src/constants/theme';
 
 function Card({ children, style }: { children: React.ReactNode; style?: any }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-interface LocalAlert {
-  id: string;
-  symbol: string;
-  type: 'price_above' | 'price_below' | 'ai_signal';
-  threshold?: string;
-  enabled: boolean;
-  createdAt: string;
-}
-
 export default function AlertsScreen() {
-  const [alerts, setAlerts] = useState<LocalAlert[]>([]);
-  const [symbol, setSymbol] = useState('');
-  const [threshold, setThreshold] = useState('');
-  const [alertType, setAlertType] = useState<'price_above' | 'price_below' | 'ai_signal'>('price_above');
-  const [showForm, setShowForm] = useState(false);
+  const {
+    alerts, alertsTotal, unreadAlertCount, loadingStates,
+    fetchAlerts, markAlertRead, markAllAlertsRead, fetchUnreadAlertCount,
+  } = useStrategyStore();
 
-  const { stockAnalyses, loadingStates, analyzeStockOpportunity } = useAIStore();
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const handleAddAlert = () => {
-    const sym = symbol.trim().toUpperCase();
-    if (!sym) { Alert.alert('提示', '请输入股票代码'); return; }
-    if (alertType !== 'ai_signal' && !threshold.trim()) {
-      Alert.alert('提示', '请输入价格阈值');
-      return;
-    }
-    const newAlert: LocalAlert = {
-      id: Date.now().toString(),
-      symbol: sym,
-      type: alertType,
-      threshold: threshold.trim(),
-      enabled: true,
-      createdAt: new Date().toLocaleString('zh-CN'),
-    };
-    setAlerts((prev) => [newAlert, ...prev]);
-    setSymbol('');
-    setThreshold('');
-    setShowForm(false);
+  useEffect(() => {
+    fetchAlerts(false);
+    fetchUnreadAlertCount();
+  }, []);
 
-    if (alertType === 'ai_signal') {
-      analyzeStockOpportunity(sym);
-    }
+  useEffect(() => {
+    const timer = setInterval(() => fetchUnreadAlertCount(), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchAlerts(unreadOnly);
+    await fetchUnreadAlertCount();
+    setRefreshing(false);
+  }, [unreadOnly]);
+
+  const toggleFilter = () => {
+    const next = !unreadOnly;
+    setUnreadOnly(next);
+    fetchAlerts(next);
   };
 
-  const toggleAlert = (id: string) => {
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a))
-    );
-  };
-
-  const removeAlert = (id: string) => {
-    Alert.alert('确认', '确定删除这条提醒？', [
-      { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => setAlerts((prev) => prev.filter((a) => a.id !== id)) },
-    ]);
-  };
-
-  const typeLabel: Record<string, string> = {
-    price_above: '价格上穿',
-    price_below: '价格下穿',
-    ai_signal: 'AI 信号',
-  };
-
-  const typeColor: Record<string, string> = {
-    price_above: Colors.success,
-    price_below: Colors.danger,
-    ai_signal: Colors.purple,
-  };
+  const isLoading = loadingStates.alerts;
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.pageTitle}>智能提醒</Text>
-            <Text style={styles.pageDesc}>设置价格预警和 AI 信号提醒</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => setShowForm(!showForm)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name={showForm ? 'close' : 'add'} size={22} color="#fff" />
-          </TouchableOpacity>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.pageTitle}>策略信号</Text>
+          <Text style={styles.pageDesc}>
+            {unreadAlertCount > 0 ? `${unreadAlertCount} 条未读信号` : '所有信号已读'}
+          </Text>
         </View>
-
-        {showForm && (
-          <Card style={{ borderColor: Colors.primary }}>
-            <Text style={styles.formTitle}>新建提醒</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="股票代码，如 000001.SZ"
-              placeholderTextColor={Colors.textMuted}
-              value={symbol}
-              onChangeText={setSymbol}
-              autoCapitalize="characters"
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.filterBtn, unreadOnly && styles.filterBtnActive]}
+            onPress={toggleFilter}
+          >
+            <Ionicons
+              name={unreadOnly ? 'eye' : 'eye-off-outline'}
+              size={16}
+              color={unreadOnly ? Colors.primary : Colors.textMuted}
             />
-            <View style={styles.typeRow}>
-              {(['price_above', 'price_below', 'ai_signal'] as const).map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.typeBtn, alertType === t && { backgroundColor: typeColor[t] + '33', borderColor: typeColor[t] }]}
-                  onPress={() => setAlertType(t)}
-                >
-                  <Text style={[styles.typeBtnText, alertType === t && { color: typeColor[t] }]}>
-                    {typeLabel[t]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {alertType !== 'ai_signal' && (
-              <TextInput
-                style={styles.textInput}
-                placeholder="价格阈值"
-                placeholderTextColor={Colors.textMuted}
-                value={threshold}
-                onChangeText={setThreshold}
-                keyboardType="numeric"
-              />
-            )}
-            <TouchableOpacity style={styles.submitBtn} onPress={handleAddAlert} activeOpacity={0.7}>
-              <Text style={styles.submitBtnText}>添加提醒</Text>
+            <Text style={[styles.filterText, unreadOnly && { color: Colors.primary }]}>
+              {unreadOnly ? '仅未读' : '全部'}
+            </Text>
+          </TouchableOpacity>
+          {unreadAlertCount > 0 && (
+            <TouchableOpacity style={styles.markAllBtn} onPress={markAllAlertsRead}>
+              <Ionicons name="checkmark-done" size={18} color={Colors.primary} />
             </TouchableOpacity>
-          </Card>
-        )}
+          )}
+        </View>
+      </View>
 
-        {alerts.length === 0 && !showForm && (
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+      >
+        {isLoading && alerts.length === 0 ? (
+          <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 60 }} />
+        ) : alerts.length === 0 ? (
           <View style={styles.empty}>
-            <Ionicons name="notifications-off-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyText}>暂无提醒</Text>
-            <Text style={styles.emptyHint}>点击右上角 + 创建新提醒</Text>
+            <Ionicons name="notifications-off-outline" size={52} color={Colors.textMuted} />
+            <Text style={styles.emptyText}>暂无信号提醒</Text>
+            <Text style={styles.emptyHint}>
+              在策略管理中开启提醒后，系统会自动推送买卖信号
+            </Text>
           </View>
-        )}
-
-        {alerts.map((alert) => {
-          const stockData = stockAnalyses[alert.symbol];
-          const isAnalyzing = loadingStates[`stockAnalysis_${alert.symbol}`];
+        ) : alerts.map((alert) => {
+          const isBuy = alert.alert_type === 'BUY_SIGNAL';
+          const signalColor = isBuy ? Colors.success : Colors.danger;
 
           return (
-            <Card key={alert.id}>
-              <View style={styles.alertHeader}>
-                <View style={[styles.typeDot, { backgroundColor: typeColor[alert.type] }]} />
-                <Text style={styles.alertSymbol}>{alert.symbol}</Text>
-                <Text style={[styles.alertType, { color: typeColor[alert.type] }]}>
-                  {typeLabel[alert.type]}
+            <TouchableOpacity
+              key={alert.id}
+              activeOpacity={0.7}
+              onPress={() => !alert.is_read && markAlertRead(alert.id)}
+            >
+              <Card style={!alert.is_read ? { borderColor: signalColor + '55' } : undefined}>
+                <View style={styles.alertRow}>
+                  <View style={[styles.signalIcon, { backgroundColor: signalColor + '18' }]}>
+                    <Ionicons
+                      name={isBuy ? 'trending-up' : 'trending-down'}
+                      size={22}
+                      color={signalColor}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.alertTitleRow}>
+                      <Text style={styles.alertSymbol}>{alert.stock_symbol}</Text>
+                      <View style={[styles.signalBadge, { backgroundColor: signalColor + '22' }]}>
+                        <Text style={[styles.signalBadgeText, { color: signalColor }]}>
+                          {isBuy ? '买入信号' : '卖出信号'}
+                        </Text>
+                      </View>
+                      {!alert.is_read && <View style={styles.unreadDot} />}
+                    </View>
+                    <Text style={styles.alertMessage} numberOfLines={3}>{alert.message}</Text>
+                    {alert.triggered_strategy && (
+                      <View style={styles.triggerRow}>
+                        <Ionicons name="flash" size={12} color={Colors.warning} />
+                        <Text style={styles.triggerText}>触发策略: {alert.triggered_strategy}</Text>
+                      </View>
+                    )}
+                    {alert.details && (
+                      <Text style={styles.alertDetails} numberOfLines={2}>{alert.details}</Text>
+                    )}
+                  </View>
+                </View>
+                <Text style={styles.alertTime}>
+                  {new Date(alert.created_at).toLocaleString('zh-CN')}
                 </Text>
-                <TouchableOpacity onPress={() => toggleAlert(alert.id)}>
-                  <Ionicons
-                    name={alert.enabled ? 'toggle' : 'toggle-outline'}
-                    size={28}
-                    color={alert.enabled ? Colors.success : Colors.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
-              {alert.threshold && (
-                <Text style={styles.alertThreshold}>阈值: {alert.threshold}</Text>
-              )}
-              <View style={styles.alertFooter}>
-                <Text style={styles.alertTime}>{alert.createdAt}</Text>
-                <TouchableOpacity onPress={() => removeAlert(alert.id)}>
-                  <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-                </TouchableOpacity>
-              </View>
-
-              {alert.type === 'ai_signal' && isAnalyzing && (
-                <View style={styles.analyzing}>
-                  <ActivityIndicator size="small" color={Colors.purple} />
-                  <Text style={styles.analyzingText}>AI 正在分析...</Text>
-                </View>
-              )}
-              {alert.type === 'ai_signal' && stockData && (
-                <View style={styles.aiResult}>
-                  <Text style={styles.aiResultTitle}>
-                    AI 建议: {stockData.recommendation}（风险 {stockData.risk_level}）
-                  </Text>
-                  {stockData.analysis_summary && (
-                    <Text style={styles.aiResultText}>{stockData.analysis_summary}</Text>
-                  )}
-                </View>
-              )}
-            </Card>
+              </Card>
+            </TouchableOpacity>
           );
         })}
+
+        {alerts.length > 0 && alerts.length < alertsTotal && (
+          <TouchableOpacity
+            style={styles.loadMoreBtn}
+            onPress={() => fetchAlerts(unreadOnly, 20, alerts.length)}
+          >
+            <Text style={styles.loadMoreText}>加载更多</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -201,58 +155,57 @@ export default function AlertsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  content: { padding: Spacing.lg, paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.lg },
-  pageTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
-  pageDesc: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 4 },
-  addBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center',
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    backgroundColor: Colors.bgCard, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
+  pageTitle: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.text },
+  pageDesc: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  filterBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.border,
+  },
+  filterBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary + '15' },
+  filterText: { fontSize: FontSize.xs, color: Colors.textMuted },
+  markAllBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  content: { padding: Spacing.lg, paddingBottom: 40 },
   card: {
     backgroundColor: Colors.bgCard, borderRadius: BorderRadius.lg,
     padding: Spacing.lg, marginBottom: Spacing.md,
     borderWidth: 1, borderColor: Colors.border,
   },
-  formTitle: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, marginBottom: Spacing.md },
-  textInput: {
-    backgroundColor: Colors.bg, borderRadius: BorderRadius.md,
-    borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: Spacing.lg, height: 46,
-    color: Colors.text, fontSize: FontSize.md, marginBottom: Spacing.sm,
-  },
-  typeRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
-  typeBtn: {
-    flex: 1, height: 36, borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: Colors.border,
+  empty: { alignItems: 'center', paddingVertical: 80 },
+  emptyText: { fontSize: FontSize.lg, color: Colors.textMuted, marginTop: Spacing.md },
+  emptyHint: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: Spacing.sm, textAlign: 'center', paddingHorizontal: 40 },
+  alertRow: { flexDirection: 'row', gap: Spacing.md },
+  signalIcon: {
+    width: 44, height: 44, borderRadius: 12,
     justifyContent: 'center', alignItems: 'center',
   },
-  typeBtnText: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '500' },
-  submitBtn: {
-    backgroundColor: Colors.primary, height: 44, borderRadius: BorderRadius.md,
-    justifyContent: 'center', alignItems: 'center', marginTop: Spacing.xs,
+  alertTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  alertSymbol: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
+  signalBadge: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
   },
-  submitBtnText: { color: '#fff', fontSize: FontSize.md, fontWeight: '600' },
-  empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: FontSize.lg, color: Colors.textMuted, marginTop: Spacing.md },
-  emptyHint: { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: Spacing.xs },
-  alertHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  typeDot: { width: 8, height: 8, borderRadius: 4 },
-  alertSymbol: { fontSize: FontSize.md, fontWeight: '600', color: Colors.text, flex: 1 },
-  alertType: { fontSize: FontSize.xs, fontWeight: '600' },
-  alertThreshold: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: Spacing.xs, marginLeft: 20 },
-  alertFooter: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: Spacing.sm, paddingTop: Spacing.sm,
-    borderTopWidth: 1, borderTopColor: Colors.border,
+  signalBadgeText: { fontSize: FontSize.xs, fontWeight: '600' },
+  unreadDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary,
   },
-  alertTime: { fontSize: FontSize.xs, color: Colors.textMuted },
-  analyzing: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-  analyzingText: { fontSize: FontSize.xs, color: Colors.purple },
-  aiResult: {
-    marginTop: Spacing.sm, padding: Spacing.sm,
-    backgroundColor: Colors.purple + '11', borderRadius: BorderRadius.sm,
+  alertMessage: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20, marginTop: 4 },
+  triggerRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  triggerText: { fontSize: FontSize.xs, color: Colors.warning },
+  alertDetails: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 4, lineHeight: 16 },
+  alertTime: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: Spacing.sm, textAlign: 'right' },
+  loadMoreBtn: {
+    alignItems: 'center', paddingVertical: Spacing.lg,
+    marginTop: Spacing.sm,
   },
-  aiResultTitle: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.purple },
-  aiResultText: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
+  loadMoreText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600' },
 });

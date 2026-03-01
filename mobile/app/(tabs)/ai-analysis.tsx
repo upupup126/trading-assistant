@@ -310,10 +310,10 @@ export default function AIAnalysisScreen() {
                     </View>
                   )}
                 </View>
-                {currentAdvice.reasoning?.length > 0 && (
+                {currentAdvice.reasoning && (
                   <>
                     <Text style={styles.subTitle}>推理过程</Text>
-                    {currentAdvice.reasoning.map((r, i) => (
+                    {(Array.isArray(currentAdvice.reasoning) ? currentAdvice.reasoning : [currentAdvice.reasoning]).map((r: string, i: number) => (
                       <View key={i} style={styles.bulletRow}>
                         <Text style={styles.bullet}>•</Text>
                         <Text style={styles.bodyText}>{r}</Text>

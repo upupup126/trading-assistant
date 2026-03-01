@@ -95,7 +95,7 @@ export default function RiskManagementScreen() {
             <Card>
               <RiskGauge
                 level={riskAssessment.portfolio_risk_level}
-                score={riskAssessment.risk_score}
+                score={riskAssessment.risk_score ?? 0}
               />
               <View style={styles.metricRow}>
                 <View style={styles.metricBox}>
@@ -115,13 +115,13 @@ export default function RiskManagementScreen() {
               </Card>
             )}
 
-            {riskAssessment.risk_factors?.length > 0 && (
+            {(riskAssessment.risk_factors?.length ?? 0) > 0 && (
               <Card>
                 <View style={styles.sectionHeader}>
                   <Ionicons name="warning" size={16} color={Colors.warning} />
                   <Text style={styles.sectionTitle}>风险因素</Text>
                 </View>
-                {riskAssessment.risk_factors.map((f, i) => (
+                {riskAssessment.risk_factors!.map((f: string, i: number) => (
                   <View key={i} style={styles.factorRow}>
                     <Ionicons name="alert-circle" size={14} color={Colors.danger} />
                     <Text style={styles.bodyText}>{f}</Text>

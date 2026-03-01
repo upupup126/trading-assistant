@@ -11,10 +11,10 @@ const tabConfig: {
   iconFocused: IoniconsName;
 }[] = [
   { name: 'dashboard', title: '仪表板', icon: 'grid-outline', iconFocused: 'grid' },
+  { name: 'portfolio', title: '持仓', icon: 'pie-chart-outline', iconFocused: 'pie-chart' },
   { name: 'ai-analysis', title: 'AI分析', icon: 'analytics-outline', iconFocused: 'analytics' },
-  { name: 'trading-plans', title: '交易计划', icon: 'document-text-outline', iconFocused: 'document-text' },
-  { name: 'risk-management', title: '风险控制', icon: 'shield-outline', iconFocused: 'shield' },
-  { name: 'alerts', title: '提醒', icon: 'notifications-outline', iconFocused: 'notifications' },
+  { name: 'trading-plans', title: '策略', icon: 'document-text-outline', iconFocused: 'document-text' },
+  { name: 'alerts', title: '信号', icon: 'notifications-outline', iconFocused: 'notifications' },
 ];
 
 export default function TabsLayout() {
@@ -53,6 +53,7 @@ export default function TabsLayout() {
           }}
         />
       ))}
+      <Tabs.Screen name="risk-management" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
