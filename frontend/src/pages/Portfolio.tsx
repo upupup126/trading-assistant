@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useToast } from '@/hooks/use-toast'
-import { api, StockSearchResult, StockQuote, PositionItem, TradeExecutionItem, FundInfo, ACCOUNTS } from '@/lib/api'
+import { api, StockSearchResult, StockQuote, PositionItem, TradeExecutionItem, FundInfo, ACCOUNTS, TradingStrategy } from '@/lib/api'
 import { formatNumber, formatCurrency } from '@/lib/utils'
 import {
   Wallet,
@@ -33,6 +34,7 @@ import {
   ArrowDownRight,
   Settings2,
   Building2,
+  Target,
 } from 'lucide-react'
 
 export default function Portfolio() {
@@ -58,6 +60,7 @@ export default function Portfolio() {
   } = usePortfolioStore()
 
   const [refreshing, setRefreshing] = useState(false)
+  const [strategies, setStrategies] = useState<TradingStrategy[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 判断当前是否为A股交易时段（周一至周五 9:15-15:05）
@@ -123,6 +126,16 @@ export default function Portfolio() {
 
   const loadData = async () => {
     await Promise.all([fetchPositions(), fetchFund(), fetchTradeHistory()])
+    fetchStrategies()
+  }
+
+  const fetchStrategies = async () => {
+    try {
+      const data = await api.getStrategies()
+      setStrategies(data)
+    } catch {
+      // ignore
+    }
   }
 
   const handleRefresh = async () => {
@@ -280,6 +293,7 @@ export default function Portfolio() {
               isLoading={isLoading}
               currentAccount={currentAccount}
               isTradeTime={isTradeTime()}
+              tradingStrategies={strategies}
               onAddPosition={async (data) => {
                 await addPosition({ ...data, account: currentAccount })
                 toast({ title: '添加成功', description: `已添加 ${data.symbol} 持仓到${currentAccountLabel}` })
@@ -345,6 +359,7 @@ function PositionsTab({
   isLoading,
   currentAccount,
   isTradeTime,
+  tradingStrategies,
   onAddPosition,
   onDeletePosition,
 }: {
@@ -354,10 +369,16 @@ function PositionsTab({
   isLoading: boolean
   currentAccount: string
   isTradeTime: boolean
+  tradingStrategies: TradingStrategy[]
   onAddPosition: (data: any) => Promise<void>
   onDeletePosition: (id: string, symbol: string) => Promise<void>
 }) {
+  const navigate = useNavigate()
   const [addOpen, setAddOpen] = useState(false)
+
+  // 获取某股票的活跃策略数
+  const getActiveStrategiesCount = (symbol: string) =>
+    tradingStrategies.filter(s => s.stock_symbol === symbol && s.status === 'ACTIVE').length
 
   // 计算带实时行情的持仓汇总
   const totalMarketValue = positions.reduce((sum, p) => {
@@ -371,7 +392,7 @@ function PositionsTab({
   return (
     <Card className="trading-card">
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <CardTitle className="text-white">当前持仓</CardTitle>
             <CardDescription className="text-slate-400">
@@ -384,23 +405,25 @@ function PositionsTab({
               )}
             </CardDescription>
           </div>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                添加持仓
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-slate-800 border-slate-700 text-white">
-              <AddPositionForm
-                onSubmit={async (data) => {
-                  await onAddPosition(data)
-                  setAddOpen(false)
-                }}
-                isLoading={isLoading}
-              />
-            </DialogContent>
-          </Dialog>
+          <div className="flex items-center gap-2">
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  添加持仓
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-slate-800 border-slate-700 text-white">
+                <AddPositionForm
+                  onSubmit={async (data) => {
+                    await onAddPosition(data)
+                    setAddOpen(false)
+                  }}
+                  isLoading={isLoading}
+                />
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -434,12 +457,25 @@ function PositionsTab({
                     const unrealizedPnL = hasCurrentPrice ? (currentPrice - p.avg_cost) * p.quantity : null
                     const pnlPercent = hasCurrentPrice && p.avg_cost > 0 ? ((currentPrice - p.avg_cost) / p.avg_cost) * 100 : null
                     const marketValue = hasCurrentPrice ? currentPrice * p.quantity : null
+                    const activeStrategies = getActiveStrategiesCount(p.symbol)
                     return (
                     <tr key={p.id} className="border-b border-slate-800 hover:bg-slate-800/30">
                       <td className="py-3 px-2">
-                        <div>
-                          <p className="font-medium text-white">{p.stock_name}</p>
-                          <p className="text-xs text-slate-400">{p.symbol} · {p.exchange}</p>
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <p className="font-medium text-white">{p.stock_name}</p>
+                            <p className="text-xs text-slate-400">{p.symbol} · {p.exchange}</p>
+                          </div>
+                          {activeStrategies > 0 && (
+                            <button
+                              onClick={() => navigate(`/trading-plans?symbol=${p.symbol}`)}
+                              className="inline-flex items-center gap-0.5 bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs px-1.5 py-0.5 rounded-full hover:bg-orange-500/30 hover:text-orange-300 transition-colors cursor-pointer"
+                              title={`查看 ${p.stock_name} 的策略`}
+                            >
+                              <Target className="w-3 h-3 mr-0.5" />
+                              {activeStrategies}个策略
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className="text-right py-3 px-2 text-white font-mono">{p.quantity}</td>
@@ -486,14 +522,25 @@ function PositionsTab({
                         )}
                       </td>
                       <td className="text-right py-3 px-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onDeletePosition(p.id, p.symbol)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/trading-plans?symbol=${p.symbol}`)}
+                            className="text-orange-400 hover:text-orange-300 hover:bg-orange-500/10"
+                            title={`查看 ${p.stock_name} 的策略`}
+                          >
+                            <Target className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onDeletePosition(p.id, p.symbol)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                     )

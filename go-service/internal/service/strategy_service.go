@@ -18,13 +18,15 @@ import (
 
 type StrategyService struct {
 	strategyRepo     repository.StrategyRepository
+	tradingService   *TradingService
 	pythonServiceURL string
 	stopChan         chan struct{}
 }
 
-func NewStrategyService(strategyRepo repository.StrategyRepository, pythonServiceURL string) *StrategyService {
+func NewStrategyService(strategyRepo repository.StrategyRepository, pythonServiceURL string, tradingService *TradingService) *StrategyService {
 	return &StrategyService{
 		strategyRepo:     strategyRepo,
+		tradingService:   tradingService,
 		pythonServiceURL: pythonServiceURL,
 		stopChan:         make(chan struct{}),
 	}
@@ -459,6 +461,37 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 
 		if err := s.strategyRepo.CreateAlert(ctx, alert); err != nil {
 			log.Printf("Failed to create alert for strategy %s: %v", sig.StrategyID, err)
+			continue
+		}
+
+		// 自动创建交易计划
+		if s.tradingService != nil {
+			targetPrice := 0.0
+			// 尝试从 details 中解析目标价格
+			if sig.Details != "" {
+				var detailMap map[string]interface{}
+				if json.Unmarshal([]byte(sig.Details), &detailMap) == nil {
+					if price, ok := detailMap["trigger_price"]; ok {
+						if p, ok := price.(float64); ok {
+							targetPrice = p
+						}
+					}
+					if targetPrice == 0 {
+						if price, ok := detailMap["current_price"]; ok {
+							if p, ok := price.(float64); ok {
+								targetPrice = p
+							}
+						}
+					}
+				}
+			}
+			if targetPrice > 0 {
+				if err := s.tradingService.CreatePlanFromSignal(ctx, userID, sig.StockSymbol, sig.StockName, sig.AlertType, alert.ID, targetPrice); err != nil {
+					log.Printf("Failed to auto-create trading plan for alert %s: %v", alert.ID, err)
+				} else {
+					log.Printf("Auto-created trading plan for %s %s", sig.StockSymbol, sig.AlertType)
+				}
+			}
 		}
 	}
 

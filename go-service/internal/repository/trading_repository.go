@@ -34,6 +34,13 @@ type TradingRepository interface {
 	EnsureAccountFund(ctx context.Context, userID uuid.UUID, account string) (*model.AccountFund, error)
 	GetAllAccountFunds(ctx context.Context, userID uuid.UUID) ([]model.AccountFund, error)
 
+	// 交易计划
+	GetPlans(ctx context.Context, userID uuid.UUID, status string) ([]model.TradingPlan, error)
+	GetPlanByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*model.TradingPlan, error)
+	CreatePlan(ctx context.Context, plan *model.TradingPlan) error
+	UpdatePlan(ctx context.Context, plan *model.TradingPlan) error
+	GetPlansBySymbol(ctx context.Context, userID uuid.UUID, symbol string) ([]model.TradingPlan, error)
+
 	// 兼容旧资金（UserSettings）
 	GetUserSettings(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
 	EnsureUserSettings(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
@@ -250,4 +257,53 @@ func (r *tradingRepository) EnsureUserSettings(ctx context.Context, userID uuid.
 		return nil, err
 	}
 	return newSettings, nil
+}
+
+// ============ 交易计划 ============
+
+func (r *tradingRepository) GetPlans(ctx context.Context, userID uuid.UUID, status string) ([]model.TradingPlan, error) {
+	var plans []model.TradingPlan
+	query := r.db.WithContext(ctx).
+		Preload("Stock").
+		Where("user_id = ?", userID)
+
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	err := query.Order("created_at DESC").Find(&plans).Error
+	return plans, err
+}
+
+func (r *tradingRepository) GetPlanByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*model.TradingPlan, error) {
+	var plan model.TradingPlan
+	err := r.db.WithContext(ctx).
+		Preload("Stock").
+		First(&plan, "id = ? AND user_id = ?", id, userID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &plan, nil
+}
+
+func (r *tradingRepository) CreatePlan(ctx context.Context, plan *model.TradingPlan) error {
+	return r.db.WithContext(ctx).Create(plan).Error
+}
+
+func (r *tradingRepository) UpdatePlan(ctx context.Context, plan *model.TradingPlan) error {
+	return r.db.WithContext(ctx).Save(plan).Error
+}
+
+func (r *tradingRepository) GetPlansBySymbol(ctx context.Context, userID uuid.UUID, symbol string) ([]model.TradingPlan, error) {
+	var plans []model.TradingPlan
+	err := r.db.WithContext(ctx).
+		Preload("Stock").
+		Joins("JOIN stocks ON stocks.id = trading_plans.stock_id").
+		Where("trading_plans.user_id = ? AND stocks.symbol = ?", userID, symbol).
+		Order("trading_plans.created_at DESC").
+		Find(&plans).Error
+	return plans, err
 }

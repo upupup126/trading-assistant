@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -58,11 +59,24 @@ function StrategyTypeBadge({ type }: { type: string }) {
 // ============ 主页面 ============
 export default function TradingPlans() {
   const store = useStrategyStore()
-  const [activeTab, setActiveTab] = useState('strategies')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filterSymbol = searchParams.get('symbol') || ''
+  const [activeTab, setActiveTab] = useState(filterSymbol ? 'strategies' : 'strategies')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [editingStrategy, setEditingStrategy] = useState<TradingStrategy | null>(null)
   const [backtestTarget, setBacktestTarget] = useState<TradingStrategy | null>(null)
   const [alertUnreadOnly, setAlertUnreadOnly] = useState(false)
+
+  // 当 URL 携带 symbol 参数时，自动切到我的策略 tab
+  useEffect(() => {
+    if (filterSymbol) {
+      setActiveTab('strategies')
+    }
+  }, [filterSymbol])
+
+  const handleClearFilter = () => {
+    setSearchParams({})
+  }
 
   useEffect(() => {
     store.fetchBuiltinStrategies()
@@ -157,6 +171,8 @@ export default function TradingPlans() {
               strategies={store.strategies}
               builtinStrategies={store.builtinStrategies}
               isLoading={store.loadingStates['strategies']}
+              filterSymbol={filterSymbol}
+              onClearFilter={handleClearFilter}
               onEdit={(s) => { setEditingStrategy(s); setShowCreateDialog(true) }}
               onDelete={handleDeleteStrategy}
               onToggleStatus={handleToggleStatus}
@@ -214,6 +230,8 @@ function StrategiesList({
   strategies,
   builtinStrategies,
   isLoading,
+  filterSymbol,
+  onClearFilter,
   onEdit,
   onDelete,
   onToggleStatus,
@@ -223,6 +241,8 @@ function StrategiesList({
   strategies: TradingStrategy[]
   builtinStrategies: BuiltinStrategy[]
   isLoading?: boolean
+  filterSymbol?: string
+  onClearFilter?: () => void
   onEdit: (s: TradingStrategy) => void
   onDelete: (id: string) => void
   onToggleStatus: (s: TradingStrategy) => void
@@ -230,6 +250,11 @@ function StrategiesList({
   onBacktest: (s: TradingStrategy) => void
 }) {
   const builtinMap = Object.fromEntries(builtinStrategies.map(b => [b.id, b]))
+
+  // 按 symbol 过滤
+  const displayStrategies = filterSymbol
+    ? strategies.filter(s => s.stock_symbol === filterSymbol)
+    : strategies
 
   if (isLoading) {
     return (
@@ -252,8 +277,40 @@ function StrategiesList({
   }
 
   return (
-    <div className="grid gap-4">
-      {strategies.map(s => (
+    <div className="space-y-4">
+      {/* 过滤提示横幅 */}
+      {filterSymbol && (
+        <div className="flex items-center justify-between p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-blue-300">
+            <Search className="w-4 h-4" />
+            <span>
+              正在筛选 <span className="font-mono font-bold text-blue-200">{filterSymbol}</span> 的策略
+              （{displayStrategies.length} / {strategies.length}）
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onClearFilter}
+            className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 h-7 text-xs"
+          >
+            <X className="w-3 h-3 mr-1" />
+            清除筛选
+          </Button>
+        </div>
+      )}
+
+      {displayStrategies.length === 0 && filterSymbol ? (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-slate-400">
+            <LineChart className="w-12 h-12 mb-4 opacity-50" />
+            <p className="text-lg font-medium mb-1">该股票暂无策略</p>
+            <p className="text-sm">点击「新建策略」为 {filterSymbol} 配置交易策略</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {displayStrategies.map(s => (
         <Card key={s.id} className="bg-slate-800 border-slate-700 hover:border-slate-600 transition-colors">
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -342,6 +399,8 @@ function StrategiesList({
           </CardContent>
         </Card>
       ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -75,6 +75,12 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, handlers *Handlers) {
 				trading.GET("/portfolio", handlers.Trading.GetPortfolioSummary)
 				trading.GET("/stocks/search", handlers.Trading.SearchStocks)
 
+			// 交易计划
+			trading.GET("/plans", handlers.Trading.GetPlans)
+			trading.POST("/plans", handlers.Trading.CreatePlan)
+			trading.GET("/plans/:id", handlers.Trading.GetPlanByID)
+			trading.PUT("/plans/:id/status", handlers.Trading.UpdatePlanStatus)
+
 			// 交易策略管理
 			trading.GET("/strategies", handlers.Strategy.GetStrategies)
 			trading.POST("/strategies", handlers.Strategy.CreateStrategy)

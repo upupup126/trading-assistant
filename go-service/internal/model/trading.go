@@ -12,6 +12,7 @@ type TradingPlan struct {
 	ID             uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
 	UserID         uuid.UUID  `json:"user_id" gorm:"type:uuid;not null"`
 	StockID        uuid.UUID  `json:"stock_id" gorm:"type:uuid;not null"`
+	AlertID        *uuid.UUID `json:"alert_id" gorm:"type:uuid"`
 	PlanType       string     `json:"plan_type" gorm:"not null;size:20"` // BUY, SELL
 	TargetPrice    float64    `json:"target_price" gorm:"type:decimal(10,4);not null"`
 	StopLoss       *float64   `json:"stop_loss" gorm:"type:decimal(10,4)"`

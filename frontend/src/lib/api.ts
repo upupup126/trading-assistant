@@ -448,6 +448,48 @@ export interface AlertMute {
   mute_date: string
 }
 
+// ============ 交易计划类型 ============
+
+export interface TradingPlan {
+  id: string
+  stock_symbol: string
+  stock_name: string
+  plan_type: 'BUY' | 'SELL'
+  target_price: number
+  stop_loss: number | null
+  take_profit: number | null
+  quantity: number
+  reasoning: string | null
+  ai_confidence: number | null
+  status: 'ACTIVE' | 'EXECUTED' | 'CANCELLED' | 'EXPIRED'
+  priority: 'LOW' | 'MEDIUM' | 'HIGH'
+  expected_return: number | null
+  max_risk: number | null
+  alert_id: string | null
+  created_at: string
+  updated_at: string
+  executed_at: string | null
+  expires_at: string | null
+}
+
+export interface CreatePlanRequest {
+  symbol: string
+  name: string
+  exchange: string
+  plan_type: 'BUY' | 'SELL'
+  target_price: number
+  stop_loss?: number
+  take_profit?: number
+  quantity: number
+  reasoning?: string
+  priority?: string
+  alert_id?: string
+}
+
+export interface UpdatePlanStatusRequest {
+  status: 'ACTIVE' | 'EXECUTED' | 'CANCELLED' | 'EXPIRED'
+}
+
 // API方法类
 class TradingAPI {
   // 认证相关
@@ -681,6 +723,29 @@ class TradingAPI {
   async runBacktest(data: BacktestRequest): Promise<BacktestResult> {
     const response = await apiClient.post<{ success: boolean; data: BacktestResult }>('/trading/backtest', data)
     return response.data.data
+  }
+
+  // ============ 交易计划 ============
+
+  async getPlans(status?: string): Promise<TradingPlan[]> {
+    const params = status ? `?status=${encodeURIComponent(status)}` : ''
+    const response = await apiClient.get<ApiResponse<TradingPlan[]>>(`/trading/plans${params}`)
+    return response.data.data!
+  }
+
+  async getPlanByID(id: string): Promise<TradingPlan> {
+    const response = await apiClient.get<ApiResponse<TradingPlan>>(`/trading/plans/${id}`)
+    return response.data.data!
+  }
+
+  async createPlan(data: CreatePlanRequest): Promise<TradingPlan> {
+    const response = await apiClient.post<ApiResponse<TradingPlan>>('/trading/plans', data)
+    return response.data.data!
+  }
+
+  async updatePlanStatus(id: string, data: UpdatePlanStatusRequest): Promise<TradingPlan> {
+    const response = await apiClient.put<ApiResponse<TradingPlan>>(`/trading/plans/${id}/status`, data)
+    return response.data.data!
   }
 
   // ============ 批量获取股票行情 ============

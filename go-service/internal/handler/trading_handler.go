@@ -401,3 +401,181 @@ func (h *TradingHandler) SearchStocks(c *gin.Context) {
 		"request_id": c.GetString("request_id"),
 	})
 }
+
+// ============ 交易计划 ============
+
+// GetPlans 获取交易计划列表
+func (h *TradingHandler) GetPlans(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	status := c.Query("status")
+
+	plans, err := h.tradingService.GetPlans(c.Request.Context(), userID, status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "GET_PLANS_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       plans,
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// GetPlanByID 获取单个交易计划
+func (h *TradingHandler) GetPlanByID(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	planID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_PLAN_ID",
+				"message": "Invalid plan ID format",
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	plan, err := h.tradingService.GetPlanByID(c.Request.Context(), userID, planID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "PLAN_NOT_FOUND",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       plan,
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// CreatePlan 创建交易计划
+func (h *TradingHandler) CreatePlan(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	var req service.CreatePlanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_REQUEST",
+				"message": "Invalid request format",
+				"details": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	plan, err := h.tradingService.CreatePlan(c.Request.Context(), userID, &req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "CREATE_PLAN_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"success":    true,
+		"data":       plan,
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// UpdatePlanStatus 更新交易计划状态
+func (h *TradingHandler) UpdatePlanStatus(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	planID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_PLAN_ID",
+				"message": "Invalid plan ID format",
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	var req service.UpdatePlanStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_REQUEST",
+				"message": "Invalid request format",
+				"details": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	plan, err := h.tradingService.UpdatePlanStatus(c.Request.Context(), userID, planID, req.Status)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "UPDATE_PLAN_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       plan,
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}

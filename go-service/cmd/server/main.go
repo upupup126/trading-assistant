@@ -54,7 +54,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWT.Secret)
 	aiService := service.NewAIService(aiClient, db.DB)
 	tradingService := service.NewTradingService(tradingRepo, db.DB)
-	strategyService := service.NewStrategyService(strategyRepo, cfg.AI.PythonServiceURL)
+	strategyService := service.NewStrategyService(strategyRepo, cfg.AI.PythonServiceURL, tradingService)
 	
 	// 启动策略信号检查定时器
 	strategyService.StartScheduler()

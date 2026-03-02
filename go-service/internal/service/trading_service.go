@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
@@ -102,6 +103,48 @@ type StockSearchResult struct {
 	Symbol   string `json:"symbol"`
 	Name     string `json:"name"`
 	Exchange string `json:"exchange"`
+}
+
+// ============ 交易计划请求/响应类型 ============
+
+type CreatePlanRequest struct {
+	Symbol      string   `json:"symbol" binding:"required"`
+	Name        string   `json:"name" binding:"required"`
+	Exchange    string   `json:"exchange" binding:"required"`
+	PlanType    string   `json:"plan_type" binding:"required,oneof=BUY SELL"`
+	TargetPrice float64  `json:"target_price" binding:"required,gt=0"`
+	StopLoss    *float64 `json:"stop_loss"`
+	TakeProfit  *float64 `json:"take_profit"`
+	Quantity    int      `json:"quantity" binding:"required,min=1"`
+	Reasoning   string   `json:"reasoning"`
+	Priority    string   `json:"priority"`
+	AlertID     *string  `json:"alert_id"`
+}
+
+type UpdatePlanStatusRequest struct {
+	Status string `json:"status" binding:"required,oneof=ACTIVE EXECUTED CANCELLED EXPIRED"`
+}
+
+type PlanResponse struct {
+	ID             string   `json:"id"`
+	StockSymbol    string   `json:"stock_symbol"`
+	StockName      string   `json:"stock_name"`
+	PlanType       string   `json:"plan_type"`
+	TargetPrice    float64  `json:"target_price"`
+	StopLoss       *float64 `json:"stop_loss"`
+	TakeProfit     *float64 `json:"take_profit"`
+	Quantity       int      `json:"quantity"`
+	Reasoning      *string  `json:"reasoning"`
+	AIConfidence   *float64 `json:"ai_confidence"`
+	Status         string   `json:"status"`
+	Priority       string   `json:"priority"`
+	ExpectedReturn *float64 `json:"expected_return"`
+	MaxRisk        *float64 `json:"max_risk"`
+	AlertID        *string  `json:"alert_id"`
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
+	ExecutedAt     *string  `json:"executed_at"`
+	ExpiresAt      *string  `json:"expires_at"`
 }
 
 // ============ 持仓管理 ============
@@ -331,6 +374,170 @@ func (s *TradingService) GetPortfolioSummary(ctx context.Context, userID uuid.UU
 	}, nil
 }
 
+// ============ 交易计划管理 ============
+
+func (s *TradingService) GetPlans(ctx context.Context, userID uuid.UUID, status string) ([]PlanResponse, error) {
+	plans, err := s.tradingRepo.GetPlans(ctx, userID, status)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]PlanResponse, len(plans))
+	for i, p := range plans {
+		result[i] = planToResponse(&p)
+	}
+	return result, nil
+}
+
+func (s *TradingService) GetPlanByID(ctx context.Context, userID uuid.UUID, planID uuid.UUID) (*PlanResponse, error) {
+	plan, err := s.tradingRepo.GetPlanByID(ctx, planID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, errors.New("plan not found")
+	}
+	resp := planToResponse(plan)
+	return &resp, nil
+}
+
+func (s *TradingService) CreatePlan(ctx context.Context, userID uuid.UUID, req *CreatePlanRequest) (*PlanResponse, error) {
+	stock, err := s.ensureStock(ctx, req.Symbol, req.Name, req.Exchange)
+	if err != nil {
+		return nil, err
+	}
+
+	priority := req.Priority
+	if priority == "" {
+		priority = "MEDIUM"
+	}
+
+	var reasoning *string
+	if req.Reasoning != "" {
+		reasoning = &req.Reasoning
+	}
+
+	var alertID *uuid.UUID
+	if req.AlertID != nil && *req.AlertID != "" {
+		parsed, err := uuid.Parse(*req.AlertID)
+		if err == nil {
+			alertID = &parsed
+		}
+	}
+
+	plan := &model.TradingPlan{
+		UserID:      userID,
+		StockID:     stock.ID,
+		AlertID:     alertID,
+		PlanType:    req.PlanType,
+		TargetPrice: req.TargetPrice,
+		StopLoss:    req.StopLoss,
+		TakeProfit:  req.TakeProfit,
+		Quantity:    req.Quantity,
+		Reasoning:   reasoning,
+		Status:      "ACTIVE",
+		Priority:    priority,
+	}
+
+	if err := s.tradingRepo.CreatePlan(ctx, plan); err != nil {
+		return nil, err
+	}
+
+	plan.Stock = *stock
+	resp := planToResponse(plan)
+	return &resp, nil
+}
+
+func (s *TradingService) UpdatePlanStatus(ctx context.Context, userID uuid.UUID, planID uuid.UUID, status string) (*PlanResponse, error) {
+	plan, err := s.tradingRepo.GetPlanByID(ctx, planID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, errors.New("plan not found")
+	}
+
+	plan.Status = status
+	if status == "EXECUTED" {
+		now := time.Now()
+		plan.ExecutedAt = &now
+	}
+
+	if err := s.tradingRepo.UpdatePlan(ctx, plan); err != nil {
+		return nil, err
+	}
+
+	resp := planToResponse(plan)
+	return &resp, nil
+}
+
+func (s *TradingService) GetPlansBySymbol(ctx context.Context, userID uuid.UUID, symbol string) ([]PlanResponse, error) {
+	plans, err := s.tradingRepo.GetPlansBySymbol(ctx, userID, symbol)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]PlanResponse, len(plans))
+	for i, p := range plans {
+		result[i] = planToResponse(&p)
+	}
+	return result, nil
+}
+
+// CreatePlanFromSignal 从策略信号自动创建交易计划（供 StrategyService 调用）
+func (s *TradingService) CreatePlanFromSignal(ctx context.Context, userID uuid.UUID, stockSymbol, stockName, alertType string, alertID uuid.UUID, targetPrice float64) error {
+	stock, err := s.ensureStock(ctx, stockSymbol, stockName, "")
+	if err != nil {
+		return fmt.Errorf("ensure stock failed: %w", err)
+	}
+
+	planType := "BUY"
+	if alertType == "SELL_SIGNAL" {
+		planType = "SELL"
+	}
+
+	// 查找持仓来决定默认数量
+	quantity := 100 // 默认 100 股
+	positions, _ := s.tradingRepo.GetPositions(ctx, userID, "")
+	for _, pos := range positions {
+		if pos.Stock.Symbol == stockSymbol {
+			if planType == "SELL" {
+				quantity = pos.Quantity // 卖出时默认全部持仓
+			}
+			break
+		}
+	}
+
+	// 计算止损止盈
+	var stopLoss, takeProfit *float64
+	if planType == "BUY" {
+		sl := roundTo4(targetPrice * 0.92)  // 止损 -8%
+		tp := roundTo4(targetPrice * 1.15)   // 止盈 +15%
+		stopLoss = &sl
+		takeProfit = &tp
+	} else {
+		sl := roundTo4(targetPrice * 1.05)   // 卖出止损（反弹5%取消）
+		stopLoss = &sl
+	}
+
+	reasoning := fmt.Sprintf("策略信号自动生成: %s", alertType)
+
+	plan := &model.TradingPlan{
+		UserID:      userID,
+		StockID:     stock.ID,
+		AlertID:     &alertID,
+		PlanType:    planType,
+		TargetPrice: targetPrice,
+		StopLoss:    stopLoss,
+		TakeProfit:  takeProfit,
+		Quantity:    quantity,
+		Reasoning:   &reasoning,
+		Status:      "ACTIVE",
+		Priority:    "HIGH",
+	}
+
+	return s.tradingRepo.CreatePlan(ctx, plan)
+}
+
 // ============ 股票搜索 ============
 
 func (s *TradingService) SearchStocks(ctx context.Context, query string, limit int) ([]StockSearchResult, error) {
@@ -479,6 +686,40 @@ func tradeExecutionToResponse(e *model.TradeExecution) TradeExecutionResponse {
 		Notes:         e.Notes,
 		ExecutedAt:    e.ExecutedAt.Format(time.RFC3339),
 	}
+}
+
+func planToResponse(p *model.TradingPlan) PlanResponse {
+	resp := PlanResponse{
+		ID:             p.ID.String(),
+		StockSymbol:    p.Stock.Symbol,
+		StockName:      p.Stock.Name,
+		PlanType:       p.PlanType,
+		TargetPrice:    p.TargetPrice,
+		StopLoss:       p.StopLoss,
+		TakeProfit:     p.TakeProfit,
+		Quantity:       p.Quantity,
+		Reasoning:      p.Reasoning,
+		AIConfidence:   p.AIConfidence,
+		Status:         p.Status,
+		Priority:       p.Priority,
+		ExpectedReturn: p.ExpectedReturn,
+		MaxRisk:        p.MaxRisk,
+		CreatedAt:      p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      p.UpdatedAt.Format(time.RFC3339),
+	}
+	if p.AlertID != nil {
+		s := p.AlertID.String()
+		resp.AlertID = &s
+	}
+	if p.ExecutedAt != nil {
+		s := p.ExecutedAt.Format(time.RFC3339)
+		resp.ExecutedAt = &s
+	}
+	if p.ExpiresAt != nil {
+		s := p.ExpiresAt.Format(time.RFC3339)
+		resp.ExpiresAt = &s
+	}
+	return resp
 }
 
 func roundTo2(v float64) float64 {
