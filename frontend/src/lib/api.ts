@@ -363,6 +363,7 @@ export interface StrategyAlert {
   id: string
   strategy_id: string
   stock_symbol: string
+  stock_name: string
   alert_type: 'BUY_SIGNAL' | 'SELL_SIGNAL'
   triggered_strategy: string | null
   message: string
@@ -392,6 +393,8 @@ export interface BacktestTrade {
   quantity?: number
   action_type?: string
   trade_direction?: string
+  amount?: number
+  position_ratio?: number
 }
 
 export interface BacktestKlineItem {
@@ -435,6 +438,14 @@ export interface AlertsResponse {
   total: number
   limit: number
   offset: number
+}
+
+export interface AlertMute {
+  id: string
+  user_id: string
+  stock_symbol: string
+  alert_type: 'BUY_SIGNAL' | 'SELL_SIGNAL'
+  mute_date: string
 }
 
 // API方法类
@@ -650,6 +661,19 @@ class TradingAPI {
   async getUnreadAlertCount(): Promise<number> {
     const response = await apiClient.get<ApiResponse<{ count: number }>>('/trading/strategy-alerts/unread-count')
     return response.data.data!.count
+  }
+
+  async muteAlert(stockSymbol: string, alertType: string): Promise<void> {
+    await apiClient.post('/trading/strategy-alerts/mute', { stock_symbol: stockSymbol, alert_type: alertType })
+  }
+
+  async unmuteAlert(stockSymbol: string, alertType: string): Promise<void> {
+    await apiClient.post('/trading/strategy-alerts/unmute', { stock_symbol: stockSymbol, alert_type: alertType })
+  }
+
+  async getMutedAlerts(): Promise<AlertMute[]> {
+    const response = await apiClient.get<ApiResponse<{ mutes: AlertMute[] }>>('/trading/strategy-alerts/mutes')
+    return response.data.data!.mutes
   }
 
   // ============ 回测 ============

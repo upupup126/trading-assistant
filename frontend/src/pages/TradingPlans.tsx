@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStrategyStore } from '@/stores/strategyStore'
-import { api, type BuiltinStrategy, type TradingStrategy, type StockSearchResult } from '@/lib/api'
+import { api, type BuiltinStrategy, type TradingStrategy, type StockSearchResult, type StrategyAlert } from '@/lib/api'
 import { formatRelativeTime, formatNumber, formatPercent, debounce } from '@/lib/utils'
 import BacktestChart from '@/components/charts/BacktestChart'
 import {
@@ -34,10 +34,12 @@ import {
   LineChart,
   Settings,
   ChevronRight,
+  ChevronLeft,
   Eye,
   X,
   Loader2,
   Calendar,
+  Info,
 } from 'lucide-react'
 
 // ============ 策略类型标签 ============
@@ -67,6 +69,7 @@ export default function TradingPlans() {
     store.fetchStrategies()
     store.fetchAlerts()
     store.fetchUnreadAlertCount()
+    store.fetchMutedAlerts()
   }, [])
 
   // 轮询未读数
@@ -404,6 +407,41 @@ function BuiltinStrategiesPanel({ strategies }: { strategies: BuiltinStrategy[] 
 }
 
 // ============ 信号提醒面板 ============
+
+interface AlertDetails {
+  strategy_name?: string
+  strategy_id?: string
+  signal_type?: string
+  price?: number
+  date?: string
+  stock_name?: string
+  recommendation?: string
+  reason?: string
+  quote?: {
+    current_price?: number
+    change_percent?: number
+    high?: number
+    low?: number
+    prev_close?: number
+    volume?: number
+  }
+}
+
+function parseAlertDetails(details: string | null): AlertDetails | null {
+  if (!details) return null
+  try {
+    return JSON.parse(details)
+  } catch {
+    return null
+  }
+}
+
+function formatAlertVolume(vol: number): string {
+  if (vol >= 1e8) return (vol / 1e8).toFixed(2) + '亿'
+  if (vol >= 1e4) return (vol / 1e4).toFixed(0) + '万'
+  return vol.toString()
+}
+
 function AlertsPanel({
   alerts,
   total,
@@ -414,7 +452,7 @@ function AlertsPanel({
   onMarkAllRead,
   onRefresh,
 }: {
-  alerts: any[]
+  alerts: StrategyAlert[]
   total: number
   unreadOnly: boolean
   isLoading?: boolean
@@ -423,41 +461,43 @@ function AlertsPanel({
   onMarkAllRead: () => void
   onRefresh: () => void
 }) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-400">共 {total} 条提醒</span>
-          <Button
-            size="sm"
-            variant={unreadOnly ? 'default' : 'outline'}
-            className={unreadOnly ? 'bg-blue-600' : 'border-slate-600 text-slate-300'}
-            onClick={onToggleUnread}
-          >
-            仅未读
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-slate-600 text-slate-300"
-            onClick={onMarkAllRead}
-          >
-            <CheckCircle className="w-4 h-4 mr-1" /> 全部已读
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-slate-600 text-slate-300"
-            onClick={onRefresh}
-            disabled={isLoading}
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      </div>
+  const [selectedAlert, setSelectedAlert] = useState<StrategyAlert | null>(null)
+  const store = useStrategyStore()
 
+  const details = useMemo(() => selectedAlert ? parseAlertDetails(selectedAlert.details) : null, [selectedAlert])
+
+  const isSelectedMuted = useMemo(() => {
+    if (!selectedAlert) return false
+    return store.mutedAlerts.some(
+      m => m.stock_symbol === selectedAlert.stock_symbol && m.alert_type === selectedAlert.alert_type
+    )
+  }, [selectedAlert, store.mutedAlerts])
+
+  const handleOpenAlert = async (alert: StrategyAlert) => {
+    setSelectedAlert(alert)
+    if (!alert.is_read) {
+      onMarkRead(alert.id)
+    }
+  }
+
+  const handleToggleMute = useCallback(async () => {
+    if (!selectedAlert) return
+    if (isSelectedMuted) {
+      await store.unmuteAlert(selectedAlert.stock_symbol, selectedAlert.alert_type)
+    } else {
+      await store.muteAlert(selectedAlert.stock_symbol, selectedAlert.alert_type)
+    }
+  }, [selectedAlert, isSelectedMuted, store])
+
+  const isMutedFn = useCallback((alert: StrategyAlert) => {
+    return store.mutedAlerts.some(
+      m => m.stock_symbol === alert.stock_symbol && m.alert_type === alert.alert_type
+    )
+  }, [store.mutedAlerts])
+
+  // 渲染列表
+  const renderList = () => (
+    <div className="space-y-2">
       {alerts.length === 0 ? (
         <Card className="bg-slate-800 border-slate-700">
           <CardContent className="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -466,43 +506,280 @@ function AlertsPanel({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {alerts.map((alert: any) => (
+        alerts.map((alert) => {
+          const d = parseAlertDetails(alert.details)
+          const isBuy = alert.alert_type === 'BUY_SIGNAL'
+          const isSelected = selectedAlert?.id === alert.id
+          const displayName = alert.stock_name || d?.stock_name || alert.stock_symbol
+
+          return (
             <Card
               key={alert.id}
-              className={`border transition-colors cursor-pointer ${
-                alert.is_read
-                  ? 'bg-slate-800/50 border-slate-700/50'
-                  : 'bg-slate-800 border-slate-600'
+              className={`cursor-pointer transition-all duration-200 border ${
+                isSelected
+                  ? 'bg-slate-700 border-blue-500'
+                  : alert.is_read
+                    ? 'bg-slate-800/60 border-slate-700/50 hover:bg-slate-800'
+                    : 'bg-slate-800 border-slate-600 hover:bg-slate-750'
               }`}
-              onClick={() => !alert.is_read && onMarkRead(alert.id)}
+              onClick={() => handleOpenAlert(alert)}
             >
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${
-                  alert.alert_type === 'BUY_SIGNAL'
-                    ? 'bg-red-500/10 text-red-400'
-                    : 'bg-green-500/10 text-green-400'
-                }`}>
-                  {alert.alert_type === 'BUY_SIGNAL'
-                    ? <TrendingUp className="w-5 h-5" />
-                    : <TrendingDown className="w-5 h-5" />}
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`mt-0.5 p-1.5 rounded-lg ${isBuy ? 'bg-red-500/15' : 'bg-green-500/15'}`}>
+                    {isBuy
+                      ? <TrendingUp className="w-4 h-4 text-red-400" />
+                      : <TrendingDown className="w-4 h-4 text-green-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-semibold text-white truncate">{displayName}</span>
+                      <Badge className={`text-xs shrink-0 ${isBuy
+                        ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                        : 'bg-green-500/20 text-green-300 border-green-500/30'
+                      }`}>
+                        {isBuy ? '买入' : '卖出'}
+                      </Badge>
+                      {!alert.is_read && (
+                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      )}
+                      {isMutedFn(alert) && (
+                        <BellOff className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-300 truncate">
+                      {d?.strategy_name && `${d.strategy_name} · `}
+                      {d?.price ? `¥${d.price.toFixed(2)}` : ''}
+                    </p>
+                    {alert.message && (
+                      <p className="text-sm text-slate-400 mt-1 line-clamp-2">{alert.message}</p>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1">{formatRelativeTime(alert.created_at)}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm ${alert.is_read ? 'text-slate-400' : 'text-slate-200'}`}>
-                    {alert.message}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {formatRelativeTime(alert.created_at)}
-                  </p>
-                </div>
-                {!alert.is_read && (
-                  <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                )}
               </CardContent>
             </Card>
-          ))}
+          )
+        })
+      )}
+    </div>
+  )
+
+  // 渲染详情面板
+  const renderDetail = () => {
+    if (!selectedAlert) return null
+    return (
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-slate-400 hover:text-white"
+              onClick={() => setSelectedAlert(null)}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" /> 返回列表
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-slate-400 hover:text-white"
+              onClick={() => setSelectedAlert(null)}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+
+          <div className="mt-2">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${
+                selectedAlert.alert_type === 'BUY_SIGNAL' ? 'bg-red-500/15' : 'bg-green-500/15'
+              }`}>
+                {selectedAlert.alert_type === 'BUY_SIGNAL'
+                  ? <TrendingUp className="w-6 h-6 text-red-400" />
+                  : <TrendingDown className="w-6 h-6 text-green-400" />}
+              </div>
+              <div>
+                <CardTitle className="text-xl text-white">
+                  {selectedAlert.stock_name || details?.stock_name || selectedAlert.stock_symbol}
+                </CardTitle>
+                <p className="text-sm text-slate-400">{selectedAlert.stock_symbol}</p>
+              </div>
+              <Badge className={`ml-auto text-sm px-3 py-1 ${
+                selectedAlert.alert_type === 'BUY_SIGNAL'
+                  ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                  : 'bg-green-500/20 text-green-300 border-green-500/40'
+              }`}>
+                {selectedAlert.alert_type === 'BUY_SIGNAL' ? '建议买入' : '建议卖出'}
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          {/* Message */}
+          {selectedAlert.message && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+                {selectedAlert.message}
+              </p>
+            </div>
+          )}
+
+          {/* Quote info */}
+          {details?.quote && (
+            <div className="bg-slate-900/50 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-slate-400 mb-3 flex items-center gap-1.5">
+                <BarChart3 className="w-4 h-4" /> 行情数据
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-xs text-slate-500">当前价格</p>
+                  <p className="text-lg font-bold text-white">¥{details.quote.current_price?.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">涨跌幅</p>
+                  <p className={`text-lg font-bold ${(details.quote.change_percent || 0) >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                    {(details.quote.change_percent || 0) >= 0 ? '+' : ''}{details.quote.change_percent?.toFixed(2)}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">成交量</p>
+                  <p className="text-lg font-bold text-white">{details.quote.volume ? formatAlertVolume(details.quote.volume) : '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">最高</p>
+                  <p className="text-sm text-white">¥{details.quote.high?.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">最低</p>
+                  <p className="text-sm text-white">¥{details.quote.low?.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">昨收</p>
+                  <p className="text-sm text-white">¥{details.quote.prev_close?.toFixed(2)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Strategy info */}
+          <div className="bg-slate-900/50 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-slate-400 mb-3 flex items-center gap-1.5">
+              <Info className="w-4 h-4" /> 策略信息
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400">触发策略</span>
+                <span className="text-sm text-white font-medium">
+                  {details?.strategy_name || selectedAlert.triggered_strategy || '-'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400">触发价格</span>
+                <span className="text-sm text-white font-medium">¥{details?.price?.toFixed(2) || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400">触发日期</span>
+                <span className="text-sm text-white font-medium">{details?.date || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400">操作建议</span>
+                <Badge className={`${
+                  details?.recommendation === '买入'
+                    ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                    : 'bg-green-500/20 text-green-300 border-green-500/30'
+                }`}>
+                  {details?.recommendation || (selectedAlert.alert_type === 'BUY_SIGNAL' ? '买入' : '卖出')}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          {/* Reason */}
+          {details?.reason && (
+            <div className="bg-slate-900/50 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-slate-400 mb-3">分析原因</h3>
+              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{details.reason}</p>
+            </div>
+          )}
+
+          {/* Mute toggle */}
+          <div className="bg-slate-900/50 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BellOff className={`w-4 h-4 ${isSelectedMuted ? 'text-amber-400' : 'text-slate-400'}`} />
+                <div>
+                  <p className="text-sm text-white font-medium">关闭今日重复提醒</p>
+                  <p className="text-xs text-slate-500">
+                    {isSelectedMuted
+                      ? `已关闭 ${selectedAlert.stock_name || selectedAlert.stock_symbol} 的${selectedAlert.alert_type === 'BUY_SIGNAL' ? '买入' : '卖出'}信号通知（今日）`
+                      : `开启后，${selectedAlert.stock_name || selectedAlert.stock_symbol} 的同类型信号今日不再重复通知`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleToggleMute}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  isSelectedMuted ? 'bg-amber-500' : 'bg-slate-600'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isSelectedMuted ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Timestamp */}
+          <p className="text-xs text-slate-500 text-right">
+            通知时间：{new Date(selectedAlert.created_at).toLocaleString('zh-CN')}
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar - 选中详情时隐藏 */}
+      {!selectedAlert && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-400">共 {total} 条提醒</span>
+            <Button
+              size="sm"
+              variant={unreadOnly ? 'default' : 'outline'}
+              className={unreadOnly ? 'bg-blue-600' : 'border-slate-600 text-slate-300'}
+              onClick={onToggleUnread}
+            >
+              仅未读
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-slate-600 text-slate-300"
+              onClick={onMarkAllRead}
+            >
+              <CheckCircle className="w-4 h-4 mr-1" /> 全部已读
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-slate-600 text-slate-300"
+              onClick={onRefresh}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
       )}
+
+      {/* Content: 选中时显示详情，否则显示列表 */}
+      {selectedAlert ? renderDetail() : renderList()}
     </div>
   )
 }
@@ -817,6 +1094,8 @@ function BacktestPanel({
                         <th className="text-left py-2 px-3">触发规则</th>
                         <th className="text-right py-2 px-3">价格</th>
                         <th className="text-right py-2 px-3">数量(股)</th>
+                        <th className="text-right py-2 px-3">金额</th>
+                        <th className="text-right py-2 px-3">仓位</th>
                         <th className="text-right py-2 px-3">收益率</th>
                         <th className="text-right py-2 px-3">持有天数</th>
                       </tr>
@@ -866,6 +1145,12 @@ function BacktestPanel({
                             </td>
                             <td className="py-2 px-3 text-right font-mono text-slate-300">
                               {t.quantity || '-'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-300">
+                              {t.amount ? `¥${t.amount.toLocaleString()}` : '-'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-300">
+                              {t.position_ratio != null ? `${t.position_ratio}%` : '-'}
                             </td>
                             <td className={`py-2 px-3 text-right font-mono ${
                               isHold

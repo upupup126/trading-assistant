@@ -28,6 +28,12 @@ type StrategyRepository interface {
 	MarkAllAlertsRead(ctx context.Context, userID uuid.UUID) error
 	GetUnreadAlertCount(ctx context.Context, userID uuid.UUID) (int64, error)
 
+	// 通知静音
+	MuteAlert(ctx context.Context, mute *model.AlertMute) error
+	UnmuteAlert(ctx context.Context, userID uuid.UUID, stockSymbol, alertType, muteDate string) error
+	IsMuted(ctx context.Context, userID uuid.UUID, stockSymbol, alertType, muteDate string) (bool, error)
+	GetMutedAlerts(ctx context.Context, userID uuid.UUID, muteDate string) ([]model.AlertMute, error)
+
 	// 回测结果缓存
 	GetBacktestResult(ctx context.Context, symbol string, configHash string) (*model.BacktestResult, error)
 	SaveBacktestResult(ctx context.Context, result *model.BacktestResult) error
@@ -143,6 +149,40 @@ func (r *strategyRepository) GetUnreadAlertCount(ctx context.Context, userID uui
 		Where("user_id = ? AND is_read = ?", userID, false).
 		Count(&count).Error
 	return count, err
+}
+
+// ============ 通知静音 ============
+
+func (r *strategyRepository) MuteAlert(ctx context.Context, mute *model.AlertMute) error {
+	return r.db.WithContext(ctx).
+		Where("user_id = ? AND stock_symbol = ? AND alert_type = ? AND mute_date = ?",
+			mute.UserID, mute.StockSymbol, mute.AlertType, mute.MuteDate).
+		FirstOrCreate(mute).Error
+}
+
+func (r *strategyRepository) UnmuteAlert(ctx context.Context, userID uuid.UUID, stockSymbol, alertType, muteDate string) error {
+	return r.db.WithContext(ctx).
+		Where("user_id = ? AND stock_symbol = ? AND alert_type = ? AND mute_date = ?",
+			userID, stockSymbol, alertType, muteDate).
+		Delete(&model.AlertMute{}).Error
+}
+
+func (r *strategyRepository) IsMuted(ctx context.Context, userID uuid.UUID, stockSymbol, alertType, muteDate string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.AlertMute{}).
+		Where("user_id = ? AND stock_symbol = ? AND alert_type = ? AND mute_date = ?",
+			userID, stockSymbol, alertType, muteDate).
+		Count(&count).Error
+	return count > 0, err
+}
+
+func (r *strategyRepository) GetMutedAlerts(ctx context.Context, userID uuid.UUID, muteDate string) ([]model.AlertMute, error) {
+	var mutes []model.AlertMute
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND mute_date = ?", userID, muteDate).
+		Find(&mutes).Error
+	return mutes, err
 }
 
 // ============ 回测结果缓存 ============

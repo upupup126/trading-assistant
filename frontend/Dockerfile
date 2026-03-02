@@ -31,6 +31,10 @@ RUN echo 'server { \
         add_header Cache-Control "no-cache, no-store, must-revalidate"; \
         add_header Pragma "no-cache"; \
     } \
+    location = /sw.js { \
+        add_header Cache-Control "no-cache, no-store, must-revalidate"; \
+        add_header Pragma "no-cache"; \
+    } \
     location /assets/ { \
         expires 1y; \
         add_header Cache-Control "public, immutable"; \

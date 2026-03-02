@@ -34,6 +34,7 @@ type StrategyAlert struct {
 	StrategyID        uuid.UUID `json:"strategy_id" gorm:"type:uuid;not null;index"`
 	UserID            uuid.UUID `json:"user_id" gorm:"type:uuid;not null;index"`
 	StockSymbol       string    `json:"stock_symbol" gorm:"not null;size:20"`
+	StockName         string    `json:"stock_name" gorm:"size:100;default:''"`
 	AlertType         string    `json:"alert_type" gorm:"not null;size:20"` // BUY_SIGNAL, SELL_SIGNAL
 	TriggeredStrategy *string   `json:"triggered_strategy" gorm:"size:50"`
 	Message           string    `json:"message" gorm:"not null"`
@@ -54,6 +55,16 @@ type BacktestResult struct {
 	ConfigHash     string    `json:"config_hash" gorm:"not null;size:64;uniqueIndex:idx_backtest_symbol_hash"`
 	ResultData     string    `json:"result_data" gorm:"type:jsonb;not null"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+// AlertMute 通知静音记录（同一股票+同一信号类型，当天不再重复通知）
+type AlertMute struct {
+	ID          uuid.UUID `json:"id" gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`
+	UserID      uuid.UUID `json:"user_id" gorm:"type:uuid;not null;uniqueIndex:idx_alert_mute_unique"`
+	StockSymbol string    `json:"stock_symbol" gorm:"not null;size:20;uniqueIndex:idx_alert_mute_unique"`
+	AlertType   string    `json:"alert_type" gorm:"not null;size:20;uniqueIndex:idx_alert_mute_unique"` // BUY_SIGNAL, SELL_SIGNAL
+	MuteDate    string    `json:"mute_date" gorm:"not null;size:10;uniqueIndex:idx_alert_mute_unique"`  // YYYY-MM-DD
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // BeforeCreate GORM钩子
@@ -78,6 +89,13 @@ func (br *BacktestResult) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+func (am *AlertMute) BeforeCreate(tx *gorm.DB) error {
+	if am.ID == uuid.Nil {
+		am.ID = uuid.New()
+	}
+	return nil
+}
+
 // TableName 指定表名
 func (TradingStrategy) TableName() string {
 	return "trading_strategies"
@@ -89,4 +107,8 @@ func (StrategyAlert) TableName() string {
 
 func (BacktestResult) TableName() string {
 	return "backtest_results"
+}
+
+func (AlertMute) TableName() string {
+	return "alert_mutes"
 }

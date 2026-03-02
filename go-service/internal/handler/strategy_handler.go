@@ -378,6 +378,127 @@ func (h *StrategyHandler) GetUnreadAlertCount(c *gin.Context) {
 	})
 }
 
+// MuteAlert 静音通知（同一股票+同一信号类型，当天不再重复通知）
+func (h *StrategyHandler) MuteAlert(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		StockSymbol string `json:"stock_symbol" binding:"required"`
+		AlertType   string `json:"alert_type" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_REQUEST",
+				"message": "Invalid request format",
+				"details": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	if err := h.strategyService.MuteAlert(c.Request.Context(), userID, req.StockSymbol, req.AlertType); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "MUTE_ALERT_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       gin.H{"message": "Alert muted for today"},
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// UnmuteAlert 取消静音
+func (h *StrategyHandler) UnmuteAlert(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	var req struct {
+		StockSymbol string `json:"stock_symbol" binding:"required"`
+		AlertType   string `json:"alert_type" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "INVALID_REQUEST",
+				"message": "Invalid request format",
+				"details": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	if err := h.strategyService.UnmuteAlert(c.Request.Context(), userID, req.StockSymbol, req.AlertType); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "UNMUTE_ALERT_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       gin.H{"message": "Alert unmuted"},
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// GetMutedAlerts 获取今日静音列表
+func (h *StrategyHandler) GetMutedAlerts(c *gin.Context) {
+	userID, ok := h.getUserID(c)
+	if !ok {
+		return
+	}
+
+	mutes, err := h.strategyService.GetMutedAlerts(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error": gin.H{
+				"code":    "GET_MUTES_FAILED",
+				"message": err.Error(),
+			},
+			"timestamp":  time.Now().Unix(),
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"data":       gin.H{"mutes": mutes},
+		"timestamp":  time.Now().Unix(),
+		"request_id": c.GetString("request_id"),
+	})
+}
+
 // RunBacktest 执行回测
 func (h *StrategyHandler) RunBacktest(c *gin.Context) {
 	var req service.BacktestRequest

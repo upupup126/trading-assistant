@@ -72,6 +72,7 @@ type AlertResponse struct {
 	ID                string  `json:"id"`
 	StrategyID        string  `json:"strategy_id"`
 	StockSymbol       string  `json:"stock_symbol"`
+	StockName         string  `json:"stock_name"`
 	AlertType         string  `json:"alert_type"`
 	TriggeredStrategy *string `json:"triggered_strategy"`
 	Message           string  `json:"message"`
@@ -295,6 +296,29 @@ func (s *StrategyService) GetUnreadAlertCount(ctx context.Context, userID uuid.U
 	return s.strategyRepo.GetUnreadAlertCount(ctx, userID)
 }
 
+// ============ 通知静音 ============
+
+func (s *StrategyService) MuteAlert(ctx context.Context, userID uuid.UUID, stockSymbol, alertType string) error {
+	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
+	mute := &model.AlertMute{
+		UserID:      userID,
+		StockSymbol: stockSymbol,
+		AlertType:   alertType,
+		MuteDate:    today,
+	}
+	return s.strategyRepo.MuteAlert(ctx, mute)
+}
+
+func (s *StrategyService) UnmuteAlert(ctx context.Context, userID uuid.UUID, stockSymbol, alertType string) error {
+	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
+	return s.strategyRepo.UnmuteAlert(ctx, userID, stockSymbol, alertType, today)
+}
+
+func (s *StrategyService) GetMutedAlerts(ctx context.Context, userID uuid.UUID) ([]model.AlertMute, error) {
+	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
+	return s.strategyRepo.GetMutedAlerts(ctx, userID, today)
+}
+
 // ============ 回测（转发到 Python 服务） ============
 
 func (s *StrategyService) RunBacktest(ctx context.Context, req *BacktestRequest) (json.RawMessage, error) {
@@ -340,6 +364,7 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 		StrategyID         string   `json:"strategy_id"`
 		UserID             string   `json:"user_id"`
 		StockSymbol        string   `json:"stock_symbol"`
+		StockName          string   `json:"stock_name"`
 		BuiltinStrategyIDs []string `json:"builtin_strategy_ids"`
 		CustomRules        string   `json:"custom_rules"`
 	}
@@ -350,6 +375,7 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 			StrategyID:         st.ID.String(),
 			UserID:             st.UserID.String(),
 			StockSymbol:        st.StockSymbol,
+			StockName:          st.StockName,
 			BuiltinStrategyIDs: unmarshalStringArray(st.BuiltinStrategyIDs),
 			CustomRules:        st.CustomRules,
 		}
@@ -388,6 +414,7 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 			StrategyID        string `json:"strategy_id"`
 			UserID            string `json:"user_id"`
 			StockSymbol       string `json:"stock_symbol"`
+			StockName         string `json:"stock_name"`
 			AlertType         string `json:"alert_type"`
 			TriggeredStrategy string `json:"triggered_strategy"`
 			Message           string `json:"message"`
@@ -399,9 +426,22 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 		return fmt.Errorf("failed to parse check response: %w", err)
 	}
 
+	today := time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02")
+
 	for _, sig := range result.Signals {
 		strategyID, _ := uuid.Parse(sig.StrategyID)
 		userID, _ := uuid.Parse(sig.UserID)
+
+		// 检查是否已被用户静音（同一股票+同一信号类型+当天）
+		muted, err := s.strategyRepo.IsMuted(ctx, userID, sig.StockSymbol, sig.AlertType, today)
+		if err != nil {
+			log.Printf("Failed to check mute status: %v", err)
+		}
+		if muted {
+			log.Printf("Alert muted for user %s, stock %s, type %s", sig.UserID, sig.StockSymbol, sig.AlertType)
+			continue
+		}
+
 		triggeredStrategy := sig.TriggeredStrategy
 		details := sig.Details
 
@@ -409,6 +449,7 @@ func (s *StrategyService) CheckSignals(ctx context.Context, strategies []model.T
 			StrategyID:        strategyID,
 			UserID:            userID,
 			StockSymbol:       sig.StockSymbol,
+			StockName:         sig.StockName,
 			AlertType:         sig.AlertType,
 			TriggeredStrategy: &triggeredStrategy,
 			Message:           sig.Message,
@@ -507,6 +548,7 @@ func alertToResponse(a *model.StrategyAlert) AlertResponse {
 		ID:                a.ID.String(),
 		StrategyID:        a.StrategyID.String(),
 		StockSymbol:       a.StockSymbol,
+		StockName:         a.StockName,
 		AlertType:         a.AlertType,
 		TriggeredStrategy: a.TriggeredStrategy,
 		Message:           a.Message,

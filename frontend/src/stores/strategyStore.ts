@@ -8,6 +8,7 @@ import {
   CreateStrategyRequest,
   UpdateStrategyRequest,
   BacktestRequest,
+  AlertMute,
 } from '@/lib/api'
 
 interface StrategyState {
@@ -17,6 +18,7 @@ interface StrategyState {
   alertsTotal: number
   unreadAlertCount: number
   backtestResult: BacktestResult | null
+  mutedAlerts: AlertMute[]
 
   isLoading: boolean
   loadingStates: Record<string, boolean>
@@ -35,6 +37,10 @@ interface StrategyActions {
   markAllAlertsRead: () => Promise<void>
   fetchUnreadAlertCount: () => Promise<void>
 
+  muteAlert: (stockSymbol: string, alertType: string) => Promise<void>
+  unmuteAlert: (stockSymbol: string, alertType: string) => Promise<void>
+  fetchMutedAlerts: () => Promise<void>
+
   runBacktest: (data: BacktestRequest) => Promise<BacktestResult>
   clearBacktestResult: () => void
 
@@ -49,6 +55,7 @@ export const useStrategyStore = create<StrategyState & StrategyActions>((set, ge
   alertsTotal: 0,
   unreadAlertCount: 0,
   backtestResult: null,
+  mutedAlerts: [],
   isLoading: false,
   loadingStates: {},
   error: null,
@@ -165,6 +172,38 @@ export const useStrategyStore = create<StrategyState & StrategyActions>((set, ge
     try {
       const count = await api.getUnreadAlertCount()
       set({ unreadAlertCount: count })
+    } catch {
+      // silent
+    }
+  },
+
+  muteAlert: async (stockSymbol: string, alertType: string) => {
+    try {
+      await api.muteAlert(stockSymbol, alertType)
+      const mutes = await api.getMutedAlerts()
+      set({ mutedAlerts: mutes || [] })
+    } catch (error: any) {
+      set({ error: error.response?.data?.error?.message || '静音失败' })
+    }
+  },
+
+  unmuteAlert: async (stockSymbol: string, alertType: string) => {
+    try {
+      await api.unmuteAlert(stockSymbol, alertType)
+      set(state => ({
+        mutedAlerts: state.mutedAlerts.filter(
+          m => !(m.stock_symbol === stockSymbol && m.alert_type === alertType)
+        ),
+      }))
+    } catch (error: any) {
+      set({ error: error.response?.data?.error?.message || '取消静音失败' })
+    }
+  },
+
+  fetchMutedAlerts: async () => {
+    try {
+      const mutes = await api.getMutedAlerts()
+      set({ mutedAlerts: mutes || [] })
     } catch {
       // silent
     }

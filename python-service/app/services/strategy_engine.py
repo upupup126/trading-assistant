@@ -473,6 +473,8 @@ def run_backtest(
 
                     df.at[df.index[i], "signal"] = 1
 
+                    total_assets = available_cash + total_shares * price
+                    position_ratio = round((total_shares * price) / total_assets * 100, 2) if total_assets > 0 else 0
                     trades.append({
                         "entry_date": d,
                         "exit_date": "",
@@ -485,6 +487,8 @@ def run_backtest(
                         "quantity": shares_to_buy,
                         "action_type": action_type,
                         "trade_direction": "BUY",
+                        "amount": round(actual_cost, 2),
+                        "position_ratio": position_ratio,
                     })
 
             elif total_shares > 0:
@@ -546,6 +550,8 @@ def run_backtest(
                     df.at[df.index[i], "signal"] = -1
 
                     pos_name = get_strategy_name(pos_strategy_ids[0])
+                    total_assets_after = available_cash + total_shares * price
+                    position_ratio = round((total_shares * price) / total_assets_after * 100, 2) if total_assets_after > 0 else 0
                     trades.append({
                         "entry_date": entry_date_first,
                         "exit_date": d,
@@ -558,6 +564,8 @@ def run_backtest(
                         "quantity": shares_to_sell,
                         "action_type": action_type,
                         "trade_direction": "SELL",
+                        "amount": round(sell_amount, 2),
+                        "position_ratio": position_ratio,
                     })
 
                     if total_shares == 0:
@@ -589,6 +597,8 @@ def run_backtest(
                     src_id = signal_sources.get(i, "")
                     entry_strategy_name = get_strategy_name(src_id) if src_id else "自定义规则"
 
+                    total_assets = available_cash + total_shares * price
+                    position_ratio = round((total_shares * price) / total_assets * 100, 2) if total_assets > 0 else 0
                     trades.append({
                         "entry_date": d,
                         "exit_date": "",
@@ -601,6 +611,8 @@ def run_backtest(
                         "quantity": shares_to_buy,
                         "action_type": "建仓",
                         "trade_direction": "BUY",
+                        "amount": round(actual_cost, 2),
+                        "position_ratio": position_ratio,
                     })
 
             elif total_shares > 0:
@@ -651,6 +663,8 @@ def run_backtest(
                         "quantity": total_shares,
                         "action_type": "清仓",
                         "trade_direction": "SELL",
+                        "amount": round(sell_amount, 2),
+                        "position_ratio": 0,
                     })
 
                     total_shares = 0
@@ -668,6 +682,9 @@ def run_backtest(
         hold_days = backtest_end_idx - entry_idx_first
         unrealized_pnl = (last_price - avg_cost) / avg_cost * 100 if avg_cost > 0 else 0
 
+        hold_market_value = total_shares * last_price
+        total_assets_now = available_cash + hold_market_value
+        position_ratio = round(hold_market_value / total_assets_now * 100, 2) if total_assets_now > 0 else 0
         trades.append({
             "entry_date": entry_date_first,
             "exit_date": last_date,
@@ -680,6 +697,8 @@ def run_backtest(
             "quantity": total_shares,
             "action_type": "持有中",
             "trade_direction": "HOLD",
+            "amount": round(hold_market_value, 2),
+            "position_ratio": position_ratio,
         })
     else:
         capital = available_cash
@@ -803,13 +822,77 @@ def run_backtest(
 #  信号检查（实时 - 检查最新一根K线）
 # ============================================================
 
+def _generate_signal_reason(sid: str, action: str, df: pd.DataFrame, last_idx: int) -> str:
+    """根据策略ID和指标数据生成买卖原因说明"""
+    row = df.iloc[last_idx]
+    reasons = []
+
+    if sid == "ma_cross":
+        ma5 = row.get("ma5")
+        ma10 = row.get("ma10")
+        if pd.notna(ma5) and pd.notna(ma10):
+            if action == "买入":
+                reasons.append(f"MA5({ma5:.2f})上穿MA10({ma10:.2f})，短期均线向上，趋势转强")
+            else:
+                reasons.append(f"MA5({ma5:.2f})下穿MA10({ma10:.2f})，短期均线向下，趋势转弱")
+    elif sid == "macd_cross":
+        dif = row.get("dif")
+        dea = row.get("dea")
+        if pd.notna(dif) and pd.notna(dea):
+            if action == "买入":
+                reasons.append(f"MACD金叉：DIF({dif:.2f})上穿DEA({dea:.2f})，多头动能增强")
+            else:
+                reasons.append(f"MACD死叉：DIF({dif:.2f})下穿DEA({dea:.2f})，空头动能增强")
+    elif sid == "kdj_cross":
+        k = row.get("k")
+        d = row.get("d")
+        j = row.get("j")
+        if pd.notna(k) and pd.notna(d):
+            if action == "买入":
+                reasons.append(f"KDJ金叉：K({k:.1f})上穿D({d:.1f})，J值({j:.1f})，超卖区回升")
+            else:
+                reasons.append(f"KDJ死叉：K({k:.1f})下穿D({d:.1f})，J值({j:.1f})，超买区回落")
+    elif sid == "boll_band":
+        close = row.get("close", 0)
+        upper = row.get("boll_upper")
+        lower = row.get("boll_lower")
+        mid = row.get("boll_mid")
+        if pd.notna(upper) and pd.notna(lower):
+            if action == "买入":
+                reasons.append(f"股价({close:.2f})触及布林带下轨({lower:.2f})，存在反弹机会")
+            else:
+                reasons.append(f"股价({close:.2f})触及布林带上轨({upper:.2f})，存在回调风险")
+    elif sid == "rsi_signal":
+        rsi = row.get("rsi") if "rsi" in df.columns else None
+        if pd.notna(rsi):
+            if action == "买入":
+                reasons.append(f"RSI({rsi:.1f})进入超卖区域，存在反弹预期")
+            else:
+                reasons.append(f"RSI({rsi:.1f})进入超买区域，存在回调预期")
+        else:
+            reasons.append(f"RSI指标触发{action}信号")
+    elif sid == "vol_price":
+        volume = row.get("volume", 0)
+        close = row.get("close", 0)
+        if action == "买入":
+            reasons.append(f"量价齐升：成交量放大配合价格上涨({close:.2f})，多头力量增强")
+        else:
+            reasons.append(f"量价背离：成交量异动配合价格下跌({close:.2f})，空头压力加大")
+
+    if not reasons:
+        name = get_strategy_name(sid)
+        reasons.append(f"{name}策略触发{action}信号")
+
+    return "；".join(reasons)
+
+
 async def check_latest_signals(
     stock_symbol: str,
     builtin_strategy_ids: List[str],
 ) -> List[Dict[str, Any]]:
     """
     检查某只股票在最新交易日是否触发了策略信号。
-    返回触发的信号列表。
+    返回触发的信号列表，包含丰富的行情和策略分析信息。
     """
     signals = []
 
@@ -818,6 +901,13 @@ async def check_latest_signals(
         async with market_svc:
             kline_data = await market_svc.get_historical_data(stock_symbol, period="daily")
 
+            # 获取实时行情（名称、价格、涨跌幅等）
+            quote = None
+            try:
+                quote = await market_svc.get_stock_quote(stock_symbol)
+            except Exception as qe:
+                logger.warning(f"获取实时行情失败 {stock_symbol}: {qe}")
+
         if not kline_data or len(kline_data) < 60:
             return signals
 
@@ -825,6 +915,15 @@ async def check_latest_signals(
         df = build_indicators(df)
 
         last_idx = len(df) - 1
+
+        # 从实时行情或K线数据提取关键行情信息
+        stock_name = quote.get("name", "") if quote else ""
+        current_price = quote.get("price", 0) if quote else float(df["close"].iloc[last_idx])
+        change_pct = quote.get("change_percent", 0) if quote else 0
+        high = quote.get("high", 0) if quote else float(df["high"].iloc[last_idx])
+        low = quote.get("low", 0) if quote else float(df["low"].iloc[last_idx])
+        volume = quote.get("volume", 0) if quote else int(df["volume"].iloc[last_idx])
+        prev_close = quote.get("prev_close", 0) if quote else (float(df["close"].iloc[last_idx - 1]) if last_idx > 0 else 0)
 
         for sid in builtin_strategy_ids:
             df_sig = generate_signals(df.copy(), sid)
@@ -837,16 +936,32 @@ async def check_latest_signals(
                 trade_date = df["date"].iloc[last_idx]
 
                 name = get_strategy_name(sid)
+                reason = _generate_signal_reason(sid, action, df, last_idx)
+
+                display_name = f"{stock_name}({stock_symbol})" if stock_name else stock_symbol
 
                 signals.append({
                     "alert_type": alert_type,
                     "triggered_strategy": sid,
-                    "message": f"[{name}] {action}信号触发 | 日期: {trade_date} | 价格: {price:.2f}",
+                    "stock_name": stock_name,
+                    "message": f"{display_name} [{name}] {action}信号 | {trade_date} | ¥{price:.2f}",
                     "details": json.dumps({
                         "strategy_name": name,
+                        "strategy_id": sid,
                         "signal_type": action,
                         "price": round(price, 2),
                         "date": trade_date,
+                        "stock_name": stock_name,
+                        "recommendation": action,
+                        "reason": reason,
+                        "quote": {
+                            "current_price": round(current_price, 2),
+                            "change_percent": round(change_pct, 2),
+                            "high": round(high, 2),
+                            "low": round(low, 2),
+                            "prev_close": round(prev_close, 2),
+                            "volume": volume,
+                        },
                     }, ensure_ascii=False),
                 })
     except Exception as e:

@@ -563,8 +563,7 @@ class MarketDataService:
 
     async def get_minute_data(self, symbol: str) -> Dict[str, Any]:
         """获取分时走势数据
-        交易时间返回当日分时，非交易时间返回上一交易日分时
-        使用腾讯分钟线接口
+        使用腾讯新版分时数据接口 web.ifzq.gtimg.cn
         """
         cache_key = self._get_cache_key(symbol, "minute")
         if cache_key in self.cache:
@@ -577,39 +576,34 @@ class MarketDataService:
         close_session = self.session is None
 
         try:
-            # 腾讯分时数据接口
-            url = f"http://data.gtimg.cn/flashdata/hushen/minute/{tc_code}.js"
+            url = f"https://web.ifzq.gtimg.cn/appstock/app/minute/query?code={tc_code}"
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                raw = await resp.read()
-                text = raw.decode("gbk", errors="replace")
+                json_data = await resp.json(content_type=None)
 
-            # 解析分时数据
-            # 格式: date:YYMMDD\nHHMM price volume\n...
-            lines = text.strip().split("\n")
-            minutes = []
-            trade_date = ""
+            stock_data = json_data.get("data", {}).get(tc_code, {})
+            data_section = stock_data.get("data", {})
+            qt_arr = stock_data.get("qt", {}).get(tc_code, [])
+
+            # 解析日期: YYYYMMDD -> YYYY-MM-DD
+            raw_date = str(data_section.get("date", ""))
+            if len(raw_date) == 8:
+                trade_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+            else:
+                trade_date = raw_date
+
+            # 昨收价: qt数组第4个元素
             prev_close = 0.0
+            if len(qt_arr) > 4:
+                try:
+                    prev_close = float(qt_arr[4])
+                except (ValueError, TypeError):
+                    pass
 
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                if "date:" in line:
-                    m = re.search(r'date:(\d{6})', line)
-                    if m:
-                        ymd = m.group(1)
-                        year = 2000 + int(ymd[:2])
-                        month = int(ymd[2:4])
-                        day = int(ymd[4:6])
-                        trade_date = f"{year:04d}-{month:02d}-{day:02d}"
-                    continue
-                if "close:" in line:
-                    m = re.search(r'close:(\d+\.?\d*)', line)
-                    if m:
-                        prev_close = float(m.group(1))
-                    continue
-
-                parts = line.split()
+            # 解析分时数据: "HHMM price volume amount"
+            minutes = []
+            raw_minutes = data_section.get("data", [])
+            for item in raw_minutes:
+                parts = item.split()
                 if len(parts) >= 3:
                     try:
                         time_str = parts[0]

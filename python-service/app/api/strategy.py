@@ -39,6 +39,7 @@ class CheckSignalItem(BaseModel):
     strategy_id: str
     user_id: str
     stock_symbol: str
+    stock_name: str = ""
     builtin_strategy_ids: List[str] = []
     custom_rules: str = "[]"
 
@@ -112,6 +113,7 @@ async def check_signals(req: CheckSignalsRequest):
                 "strategy_id": item.strategy_id,
                 "user_id": item.user_id,
                 "stock_symbol": item.stock_symbol,
+                "stock_name": item.stock_name,
                 **sig,
             })
 

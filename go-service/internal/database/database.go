@@ -93,6 +93,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.TradingStrategy{},
 		&model.StrategyAlert{},
 		&model.BacktestResult{},
+		&model.AlertMute{},
 	)
 }
 

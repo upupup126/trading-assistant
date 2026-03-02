@@ -224,15 +224,50 @@ export default function KlineChart({ symbol, title }: KlineChartProps) {
     (e: React.WheelEvent<SVGSVGElement>) => {
       e.preventDefault()
       if (e.deltaY < 0) {
-        // 向上滚=放大
         setVisibleCount((prev) => Math.max(MIN_VISIBLE, Math.floor(prev * 0.9)))
       } else {
-        // 向下滚=缩小
         setVisibleCount((prev) => Math.min(MAX_VISIBLE, allData.length, Math.floor(prev * 1.1)))
       }
     },
     [allData.length]
   )
+
+  // 触摸 pinch-zoom 缩放支持（移动端双指缩放）
+  const lastPinchDist = useRef<number | null>(null)
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<SVGSVGElement>) => {
+    if (e.touches.length === 2) {
+      e.preventDefault()
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      lastPinchDist.current = Math.hypot(dx, dy)
+    }
+  }, [])
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      if (e.touches.length === 2 && lastPinchDist.current !== null) {
+        e.preventDefault()
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        const dist = Math.hypot(dx, dy)
+        const delta = dist - lastPinchDist.current
+        if (Math.abs(delta) > 8) {
+          if (delta > 0) {
+            setVisibleCount((prev) => Math.max(MIN_VISIBLE, Math.floor(prev * 0.92)))
+          } else {
+            setVisibleCount((prev) => Math.min(MAX_VISIBLE, allData.length, Math.floor(prev * 1.08)))
+          }
+          lastPinchDist.current = dist
+        }
+      }
+    },
+    [allData.length]
+  )
+
+  const handleTouchEnd = useCallback(() => {
+    lastPinchDist.current = null
+  }, [])
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
@@ -434,7 +469,11 @@ export default function KlineChart({ symbol, title }: KlineChartProps) {
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
                 onWheel={handleWheel}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
                 className="select-none"
+                style={{ touchAction: 'none' }}
               >
                 <rect width={m.totalW - m.infoW} height={totalH} fill="transparent" />
 

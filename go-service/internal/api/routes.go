@@ -88,6 +88,11 @@ func SetupRoutes(router *gin.Engine, cfg *config.Config, handlers *Handlers) {
 			trading.PUT("/strategy-alerts/read-all", handlers.Strategy.MarkAllAlertsRead)
 			trading.GET("/strategy-alerts/unread-count", handlers.Strategy.GetUnreadAlertCount)
 
+			// 通知静音
+			trading.POST("/strategy-alerts/mute", handlers.Strategy.MuteAlert)
+			trading.POST("/strategy-alerts/unmute", handlers.Strategy.UnmuteAlert)
+			trading.GET("/strategy-alerts/mutes", handlers.Strategy.GetMutedAlerts)
+
 			// 回测
 			trading.POST("/backtest", handlers.Strategy.RunBacktest)
 			}
