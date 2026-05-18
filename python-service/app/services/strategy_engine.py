@@ -979,7 +979,8 @@ async def check_latest_signals(
 ) -> List[Dict[str, Any]]:
     """
     检查某只股票在最新交易日是否触发了策略信号。
-    返回触发的信号列表，包含丰富的行情和策略分析信息。
+    增强版：多策略共振评分 + 大盘过滤 + 冷却期 + 异动检测。
+    返回触发的信号列表，按评分从高到低排序。
     """
     signals = []
 
@@ -988,12 +989,21 @@ async def check_latest_signals(
         async with market_svc:
             kline_data = await market_svc.get_historical_data(stock_symbol, period="daily")
 
-            # 获取实时行情（名称、价格、涨跌幅等）
+            # 获取实时行情
             quote = None
             try:
                 quote = await market_svc.get_stock_quote(stock_symbol)
             except Exception as qe:
                 logger.warning(f"获取实时行情失败 {stock_symbol}: {qe}")
+
+            # 获取上证指数数据用于大盘过滤
+            index_data = None
+            try:
+                index_kline = await market_svc.get_historical_data("000001.SH", period="daily")
+                if index_kline and len(index_kline) >= 20:
+                    index_data = pd.DataFrame(index_kline)
+            except Exception as ie:
+                logger.warning(f"获取大盘数据失败: {ie}")
 
         if not kline_data or len(kline_data) < 60:
             return signals
@@ -1012,45 +1022,201 @@ async def check_latest_signals(
         volume = quote.get("volume", 0) if quote else int(df["volume"].iloc[last_idx])
         prev_close = quote.get("prev_close", 0) if quote else (float(df["close"].iloc[last_idx - 1]) if last_idx > 0 else 0)
 
+        # ============================================================
+        # 大盘环境过滤
+        # ============================================================
+        market_filter_block_buy = False
+        if index_data is not None and len(index_data) >= 20:
+            idx_closes = index_data["close"].astype(float)
+            idx_ma20 = idx_closes.rolling(20).mean()
+            idx_last_close = float(idx_closes.iloc[-1])
+            idx_prev_close = float(idx_closes.iloc[-2]) if len(idx_closes) > 1 else idx_last_close
+            idx_ma20_val = float(idx_ma20.iloc[-1]) if not np.isnan(idx_ma20.iloc[-1]) else 0
+            idx_change_pct = (idx_last_close - idx_prev_close) / idx_prev_close * 100 if idx_prev_close > 0 else 0
+
+            # 大盘在 MA20 下方且当日跌幅 > 2% → 屏蔽买入信号
+            if idx_ma20_val > 0 and idx_last_close < idx_ma20_val and idx_change_pct < -2.0:
+                market_filter_block_buy = True
+                logger.info(f"大盘过滤器触发：上证 {idx_last_close:.2f} < MA20 {idx_ma20_val:.2f}，跌幅 {idx_change_pct:.1f}%，屏蔽买入信号")
+
+        # ============================================================
+        # 逐策略检测信号 + 共振评分
+        # ============================================================
+        buy_signals_raw = []  # [(strategy_id, reason)]
+        sell_signals_raw = []
+
         for sid in builtin_strategy_ids:
             df_sig = generate_signals(df.copy(), sid)
             sig_val = df_sig["signal"].iloc[last_idx]
 
-            if sig_val != 0:
-                alert_type = "BUY_SIGNAL" if sig_val == 1 else "SELL_SIGNAL"
-                action = "买入" if sig_val == 1 else "卖出"
-                price = df["close"].iloc[last_idx]
-                trade_date = df["date"].iloc[last_idx]
+            if sig_val == 1:
+                reason = _generate_signal_reason(sid, "买入", df, last_idx)
+                buy_signals_raw.append((sid, reason))
+            elif sig_val == -1:
+                reason = _generate_signal_reason(sid, "卖出", df, last_idx)
+                sell_signals_raw.append((sid, reason))
 
-                name = get_strategy_name(sid)
-                reason = _generate_signal_reason(sid, action, df, last_idx)
+        # ============================================================
+        # 异动检测：成交量 > 20日均量 3 倍
+        # ============================================================
+        vol_ma20 = df["vol_ma20"].iloc[last_idx] if "vol_ma20" in df.columns else 0
+        current_vol = float(df["volume"].iloc[last_idx])
+        volume_anomaly = False
+        if vol_ma20 and not np.isnan(vol_ma20) and vol_ma20 > 0 and current_vol > vol_ma20 * 3:
+            volume_anomaly = True
+            vol_ratio = round(current_vol / vol_ma20, 1)
+            anomaly_direction = "放量上涨" if change_pct > 0 else "放量下跌" if change_pct < 0 else "放量震荡"
 
-                display_name = f"{stock_name}({stock_symbol})" if stock_name else stock_symbol
+        # ============================================================
+        # 冷却期检查：检查最近3个交易日是否有同方向信号
+        # ============================================================
+        def _check_cooldown(direction: int) -> bool:
+            """检查最近3个交易日是否已触发过同方向信号"""
+            if last_idx < 3:
+                return False
+            for sid in builtin_strategy_ids:
+                df_check = generate_signals(df.copy(), sid)
+                for back in range(1, 4):  # 往前看3天
+                    idx = last_idx - back
+                    if idx >= 0 and df_check["signal"].iloc[idx] == direction:
+                        return True  # 冷却期内有同方向信号
+            return False
 
-                signals.append({
-                    "alert_type": alert_type,
-                    "triggered_strategy": sid,
+        buy_in_cooldown = _check_cooldown(1)
+        sell_in_cooldown = _check_cooldown(-1)
+
+        # ============================================================
+        # 构建最终信号列表
+        # ============================================================
+        trade_date = df["date"].iloc[last_idx]
+        display_name = f"{stock_name}({stock_symbol})" if stock_name else stock_symbol
+
+        # 处理买入信号
+        if buy_signals_raw and not market_filter_block_buy and not buy_in_cooldown:
+            # 共振评分
+            num_buy = len(buy_signals_raw)
+            if num_buy >= 3:
+                score = 80 + min(num_buy - 3, 2) * 10  # 3个80分，4个90分，5个+100分
+            elif num_buy == 2:
+                score = 60
+            else:
+                score = 30
+
+            # 异动加分
+            if volume_anomaly and change_pct > 0:
+                score = min(score + 15, 100)
+
+            strategy_names = [get_strategy_name(sid) for sid, _ in buy_signals_raw]
+            reasons = [reason for _, reason in buy_signals_raw]
+
+            signals.append({
+                "alert_type": "BUY_SIGNAL",
+                "triggered_strategy": buy_signals_raw[0][0],
+                "stock_name": stock_name,
+                "message": f"{display_name} 买入信号（{num_buy}策略共振，评分{score}）| {trade_date} | ¥{current_price:.2f}",
+                "details": json.dumps({
+                    "signal_type": "买入",
+                    "resonance_count": num_buy,
+                    "resonance_score": score,
+                    "strategies": strategy_names,
+                    "reasons": reasons,
+                    "price": round(current_price, 2),
+                    "date": trade_date,
                     "stock_name": stock_name,
-                    "message": f"{display_name} [{name}] {action}信号 | {trade_date} | ¥{price:.2f}",
-                    "details": json.dumps({
-                        "strategy_name": name,
-                        "strategy_id": sid,
-                        "signal_type": action,
-                        "price": round(price, 2),
-                        "date": trade_date,
-                        "stock_name": stock_name,
-                        "recommendation": action,
-                        "reason": reason,
-                        "quote": {
-                            "current_price": round(current_price, 2),
-                            "change_percent": round(change_pct, 2),
-                            "high": round(high, 2),
-                            "low": round(low, 2),
-                            "prev_close": round(prev_close, 2),
-                            "volume": volume,
-                        },
-                    }, ensure_ascii=False),
-                })
+                    "recommendation": "买入",
+                    "market_filter": "通过",
+                    "volume_anomaly": volume_anomaly,
+                    "quote": {
+                        "current_price": round(current_price, 2),
+                        "change_percent": round(change_pct, 2),
+                        "high": round(high, 2),
+                        "low": round(low, 2),
+                        "prev_close": round(prev_close, 2),
+                        "volume": volume,
+                    },
+                }, ensure_ascii=False),
+            })
+        elif buy_signals_raw and market_filter_block_buy:
+            logger.info(f"{stock_symbol} 买入信号被大盘过滤器屏蔽（{len(buy_signals_raw)}个策略触发）")
+        elif buy_signals_raw and buy_in_cooldown:
+            logger.info(f"{stock_symbol} 买入信号处于冷却期内，跳过")
+
+        # 处理卖出信号
+        if sell_signals_raw and not sell_in_cooldown:
+            num_sell = len(sell_signals_raw)
+            if num_sell >= 3:
+                score = 80 + min(num_sell - 3, 2) * 10
+            elif num_sell == 2:
+                score = 60
+            else:
+                score = 30
+
+            if volume_anomaly and change_pct < 0:
+                score = min(score + 15, 100)
+
+            strategy_names = [get_strategy_name(sid) for sid, _ in sell_signals_raw]
+            reasons = [reason for _, reason in sell_signals_raw]
+
+            signals.append({
+                "alert_type": "SELL_SIGNAL",
+                "triggered_strategy": sell_signals_raw[0][0],
+                "stock_name": stock_name,
+                "message": f"{display_name} 卖出信号（{num_sell}策略共振，评分{score}）| {trade_date} | ¥{current_price:.2f}",
+                "details": json.dumps({
+                    "signal_type": "卖出",
+                    "resonance_count": num_sell,
+                    "resonance_score": score,
+                    "strategies": strategy_names,
+                    "reasons": reasons,
+                    "price": round(current_price, 2),
+                    "date": trade_date,
+                    "stock_name": stock_name,
+                    "recommendation": "卖出",
+                    "market_filter": "不适用",
+                    "volume_anomaly": volume_anomaly,
+                    "quote": {
+                        "current_price": round(current_price, 2),
+                        "change_percent": round(change_pct, 2),
+                        "high": round(high, 2),
+                        "low": round(low, 2),
+                        "prev_close": round(prev_close, 2),
+                        "volume": volume,
+                    },
+                }, ensure_ascii=False),
+            })
+        elif sell_signals_raw and sell_in_cooldown:
+            logger.info(f"{stock_symbol} 卖出信号处于冷却期内，跳过")
+
+        # 异动信号（独立于买卖信号）
+        if volume_anomaly and not buy_signals_raw and not sell_signals_raw:
+            signals.append({
+                "alert_type": "VOLUME_ANOMALY",
+                "triggered_strategy": "volume_anomaly",
+                "stock_name": stock_name,
+                "message": f"{display_name} 成交量异动（{vol_ratio}倍均量，{anomaly_direction}）| {trade_date} | ¥{current_price:.2f}",
+                "details": json.dumps({
+                    "signal_type": "异动",
+                    "resonance_count": 0,
+                    "resonance_score": 50,
+                    "strategies": ["成交量异动检测"],
+                    "reasons": [f"当日成交量为20日均量的{vol_ratio}倍，{anomaly_direction}，需关注"],
+                    "price": round(current_price, 2),
+                    "date": trade_date,
+                    "stock_name": stock_name,
+                    "recommendation": "关注",
+                    "volume_anomaly": True,
+                    "volume_ratio": vol_ratio,
+                    "quote": {
+                        "current_price": round(current_price, 2),
+                        "change_percent": round(change_pct, 2),
+                        "high": round(high, 2),
+                        "low": round(low, 2),
+                        "prev_close": round(prev_close, 2),
+                        "volume": volume,
+                    },
+                }, ensure_ascii=False),
+            })
+
     except Exception as e:
         logger.error(f"Check signals failed for {stock_symbol}: {e}")
 
