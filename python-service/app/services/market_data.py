@@ -178,7 +178,7 @@ class MarketDataService:
 
     # ======================== K 线数据核心逻辑 ========================
 
-    async def _fetch_daily_kline_from_api(self, symbol: str, count: int = 365) -> List[Dict[str, Any]]:
+    async def _fetch_daily_kline_from_api(self, symbol: str, count: int = 1000) -> List[Dict[str, Any]]:
         """从腾讯 API 拉取日K数据"""
         tc_code = self._to_tencent_code(symbol)
         kline_url = f"http://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={tc_code},day,,,{count},qfq"
@@ -250,8 +250,8 @@ class MarketDataService:
             )
 
         if latest is None:
-            # 首次：拉取全量（最多365天）
-            api_data = await self._fetch_daily_kline_from_api(symbol, 365)
+            # 首次：拉取全量（约3年，~750个交易日）
+            api_data = await self._fetch_daily_kline_from_api(symbol, 1000)
         else:
             # 增量：只需拉最近30天，过滤出新的
             api_data = await self._fetch_daily_kline_from_api(symbol, 60)
@@ -276,7 +276,7 @@ class MarketDataService:
             )
         logger.info(f"同步 {symbol} 日K数据 {len(api_data)} 条")
 
-    async def _get_daily_kline_from_db(self, symbol: str, limit: int = 365) -> List[Dict[str, Any]]:
+    async def _get_daily_kline_from_db(self, symbol: str, limit: int = 1000) -> List[Dict[str, Any]]:
         """从数据库读取日K数据"""
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -358,7 +358,7 @@ class MarketDataService:
         except Exception as e:
             logger.warning(f"数据库同步失败，回退到纯 API: {e}")
             # 回退：直接从 API 获取
-            daily_data = await self._fetch_daily_kline_from_api(symbol, 365)
+            daily_data = await self._fetch_daily_kline_from_api(symbol, 1000)
             if period == "daily":
                 self.cache[cache_key] = (daily_data, datetime.now())
                 return daily_data
@@ -366,8 +366,8 @@ class MarketDataService:
             self.cache[cache_key] = (result, datetime.now())
             return result
 
-        # 2. 从数据库读取日K（足够长以支持年K聚合）
-        daily_data = await self._get_daily_kline_from_db(symbol, 365)
+        # 2. 从数据库读取日K（足够长以支持长线策略和年K聚合）
+        daily_data = await self._get_daily_kline_from_db(symbol, 1000)
 
         # 3. 按 period 聚合
         if period == "daily":

@@ -127,6 +127,54 @@ def _cross_down(series_a: pd.Series, series_b: pd.Series, idx: int) -> bool:
     return prev_a >= prev_b and curr_a < curr_b
 
 
+def _calc_weekly_macd_signals(df: pd.DataFrame) -> pd.Series:
+    """
+    将日K聚合为周K，计算周线MACD金叉/死叉，然后将信号映射回日线。
+    信号出现在每周最后一个交易日（即该周确认收盘后才触发）。
+    """
+    signals = pd.Series(0, index=df.index)
+
+    if "date" not in df.columns or len(df) < 30:
+        return signals
+
+    # 1. 按 ISO 周聚合日K为周K
+    dates = pd.to_datetime(df["date"])
+    df_temp = df.copy()
+    df_temp["_dt"] = dates
+    df_temp["_week_key"] = dates.dt.isocalendar().year.astype(str) + "-W" + dates.dt.isocalendar().week.astype(str).str.zfill(2)
+
+    week_groups = df_temp.groupby("_week_key", sort=False)
+    weekly_data = []
+    week_last_idx = []  # 每周最后一个交易日在原 df 中的 index
+
+    for week_key, group in week_groups:
+        weekly_data.append({
+            "close": group["close"].iloc[-1],
+            "open": group["open"].iloc[0],
+            "high": group["high"].max(),
+            "low": group["low"].min(),
+        })
+        week_last_idx.append(group.index[-1])
+
+    if len(weekly_data) < 10:
+        return signals
+
+    # 2. 计算周线 MACD
+    weekly_closes = pd.Series([w["close"] for w in weekly_data])
+    w_dif, w_dea, w_hist = calc_macd(weekly_closes)
+
+    # 3. 检测周线金叉/死叉，映射到对应周的最后一个交易日
+    for wi in range(1, len(weekly_closes)):
+        if _cross_up(w_dif, w_dea, wi):
+            day_idx = week_last_idx[wi]
+            signals.iloc[day_idx] = 1
+        elif _cross_down(w_dif, w_dea, wi):
+            day_idx = week_last_idx[wi]
+            signals.iloc[day_idx] = -1
+
+    return signals
+
+
 def generate_signals(df: pd.DataFrame, strategy_id: str) -> pd.DataFrame:
     """
     根据策略 ID 生成买卖信号列。
@@ -220,12 +268,14 @@ def generate_signals(df: pd.DataFrame, strategy_id: str) -> pd.DataFrame:
                         signals.iloc[i] = -1
 
         elif strategy_id == "long_macd_weekly":
-            # 周线 MACD 需要特殊处理（聚合为周K后再算）
-            # 在日K回测中，使用DIF/DEA的低频交叉（间隔>5日才算有效）来近似
-            if _cross_up(df["dif"], df["dea"], i):
-                signals.iloc[i] = 1
-            elif _cross_down(df["dif"], df["dea"], i):
-                signals.iloc[i] = -1
+            # 周线 MACD：将日K聚合为周K，计算周线MACD，再映射回日线
+            # 构建周K数据
+            if i == 1:
+                # 只在第一次循环时计算周线MACD信号，避免重复计算
+                weekly_signals = _calc_weekly_macd_signals(df)
+                df["_weekly_macd_signal"] = weekly_signals
+            if "_weekly_macd_signal" in df.columns:
+                signals.iloc[i] = df["_weekly_macd_signal"].iloc[i]
 
     df["signal"] = signals
     return df
@@ -359,14 +409,33 @@ def run_backtest(
     initial_capital: float = 100000.0,
     start_date: str = "",
     end_date: str = "",
+    commission_rate: float = 0.00025,
+    stamp_tax_rate: float = 0.001,
+    min_commission: float = 5.0,
 ) -> Dict[str, Any]:
     """
     执行回测。将多个策略的信号合并（任一策略触发即执行）。
     同时应用自定义规则（止损/止盈/最大持有天数）。
     支持仓位管理策略（分批建仓/加仓/减仓/清仓）。
     支持按时间段过滤回测范围。
+
+    交易成本参数：
+      commission_rate: 佣金费率，默认万2.5（买卖双边各收）
+      stamp_tax_rate: 印花税费率，默认千1（仅卖出时收取）
+      min_commission: 单笔最低佣金，默认5元
     返回回测统计 + 交易明细 + K线数据（含买卖点标记）。
     """
+
+    def _calc_buy_cost(amount: float) -> float:
+        """计算买入交易成本（佣金）"""
+        commission = max(amount * commission_rate, min_commission)
+        return commission
+
+    def _calc_sell_cost(amount: float) -> float:
+        """计算卖出交易成本（佣金 + 印花税）"""
+        commission = max(amount * commission_rate, min_commission)
+        stamp_tax = amount * stamp_tax_rate
+        return commission + stamp_tax
     if df.empty:
         return {"error": "No data available for backtest"}
 
@@ -464,11 +533,12 @@ def run_backtest(
                     entry_strategy_name = get_strategy_name(src_id) if src_id else "自定义规则"
                     pos_name = get_strategy_name(pos_strategy_ids[0])
 
-                    # 更新平均成本
+                    # 更新平均成本（含交易成本）
+                    buy_fee = _calc_buy_cost(actual_cost)
                     total_cost_before = avg_cost * total_shares
                     total_shares += shares_to_buy
-                    avg_cost = (total_cost_before + actual_cost) / total_shares
-                    available_cash -= actual_cost
+                    avg_cost = (total_cost_before + actual_cost + buy_fee) / total_shares
+                    available_cash -= (actual_cost + buy_fee)
                     buy_tranche += 1
 
                     df.at[df.index[i], "signal"] = 1
@@ -543,7 +613,8 @@ def run_backtest(
 
                     pnl_pct = (price - avg_cost) / avg_cost * 100
                     sell_amount = shares_to_sell * price
-                    available_cash += sell_amount
+                    sell_fee = _calc_sell_cost(sell_amount)
+                    available_cash += (sell_amount - sell_fee)
                     total_shares -= shares_to_sell
                     sell_tranche += 1
 
@@ -590,8 +661,9 @@ def run_backtest(
 
                 if shares_to_buy > 0:
                     total_shares = shares_to_buy
-                    avg_cost = price
-                    available_cash -= actual_cost
+                    buy_fee = _calc_buy_cost(actual_cost)
+                    avg_cost = (actual_cost + buy_fee) / shares_to_buy
+                    available_cash -= (actual_cost + buy_fee)
                     entry_date_first = d
                     entry_idx_first = i
                     src_id = signal_sources.get(i, "")
@@ -647,7 +719,8 @@ def run_backtest(
                 if exit_reason:
                     pnl_pct = (price - avg_cost) / avg_cost * 100
                     sell_amount = total_shares * price
-                    available_cash += sell_amount
+                    sell_fee = _calc_sell_cost(sell_amount)
+                    available_cash += (sell_amount - sell_fee)
 
                     df.at[df.index[i], "signal"] = -1
 
@@ -723,6 +796,14 @@ def run_backtest(
 
     # 统计（只统计已平仓的卖出交易）
     closed_trades = [t for t in trades if t["trade_direction"] == "SELL" and t["exit_price"] > 0]
+
+    # 计算总交易成本
+    total_trade_cost = 0.0
+    for t in trades:
+        if t["trade_direction"] == "BUY":
+            total_trade_cost += _calc_buy_cost(t["amount"])
+        elif t["trade_direction"] == "SELL":
+            total_trade_cost += _calc_sell_cost(t["amount"])
     if closed_trades:
         pnls = [t["pnl_pct"] for t in closed_trades]
         wins = [p for p in pnls if p > 0]
@@ -731,7 +812,10 @@ def run_backtest(
         avg_return = sum(pnls) / len(pnls)
         avg_win = sum(wins) / len(wins) if wins else 0
         avg_loss = sum(losses) / len(losses) if losses else 0
-        profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else float("inf")
+        # 利润因子 = 总盈利 / 总亏损绝对值
+        total_win_amount = sum(wins) if wins else 0
+        total_loss_amount = abs(sum(losses)) if losses else 0
+        profit_factor = total_win_amount / total_loss_amount if total_loss_amount != 0 else float("inf")
 
         # 最大回撤
         equity_curve = [initial_capital]
@@ -809,6 +893,9 @@ def run_backtest(
                 "total_losses": len([t for t in sell_trades if t["pnl_pct"] <= 0]),
                 "final_capital": round(capital, 2),
                 "initial_capital": initial_capital,
+                "total_trade_cost": round(total_trade_cost, 2),
+                "commission_rate": commission_rate,
+                "stamp_tax_rate": stamp_tax_rate,
             },
             "trades": trades,
             "kline_data": kline_data,
