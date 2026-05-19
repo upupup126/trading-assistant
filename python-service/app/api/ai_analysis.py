@@ -130,6 +130,44 @@ async def get_sector_hotspot(days: int = 5):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取板块热点数据失败: {str(e)}")
 
+@router.get("/stock/{symbol}/capital-flow")
+async def get_stock_capital_flow(symbol: str):
+    """获取个股实时资金流向"""
+    try:
+        async with market_data_service as service:
+            flow = await service.get_capital_flow(symbol)
+            return flow
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取资金流向失败: {str(e)}")
+
+@router.get("/stock/{symbol}/capital-flow/history")
+async def get_stock_capital_flow_history(symbol: str):
+    """获取个股历史资金流向（近30日）"""
+    try:
+        from app.services.fundamental_data import get_fund_flow_history
+        result = await get_fund_flow_history(symbol)
+        if result.get("error"):
+            raise HTTPException(status_code=500, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史资金流向失败: {str(e)}")
+
+@router.get("/stock/{symbol}/fundamentals")
+async def get_stock_fundamentals(symbol: str):
+    """获取个股基本面财务数据"""
+    try:
+        from app.services.fundamental_data import get_stock_fundamentals as _get_fundamentals
+        result = await _get_fundamentals(symbol)
+        if result.get("error"):
+            raise HTTPException(status_code=500, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取基本面数据失败: {str(e)}")
+
 @router.get("/health")
 async def health_check():
     """健康检查"""

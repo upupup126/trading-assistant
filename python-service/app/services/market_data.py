@@ -504,6 +504,105 @@ class MarketDataService:
         self.cache[cache_key] = (overview, datetime.now())
         return overview
 
+    # ======================== 资金流向数据 ========================
+
+    async def get_capital_flow(self, symbol: str) -> Dict[str, Any]:
+        """获取个股实时资金流向（腾讯 ff_ 接口）
+        返回：主力流入/流出/净流入、散户流入/流出/净流入、总资金量
+        """
+        cache_key = self._get_cache_key(symbol, "capital_flow")
+        if cache_key in self.cache:
+            data, ts = self.cache[cache_key]
+            if self._is_cache_valid(ts):
+                return data
+
+        tc_code = self._to_tencent_code(symbol)
+        url = f"http://qt.gtimg.cn/q=ff_{tc_code}"
+
+        session = self.session or aiohttp.ClientSession(headers=self._headers)
+        close_session = self.session is None
+
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                raw = await resp.read()
+                text = raw.decode("gbk", errors="replace")
+        finally:
+            if close_session:
+                await session.close()
+
+        # 解析：v_ff_sz000858="sz000858~主力流入~主力流出~主力净流入~主力净占比~散户流入~散户流出~散户净流入~散户净占比~总额~...~股票名~日期"
+        match = re.search(r'="(.+?)"', text)
+        if not match:
+            raise Exception(f"未获取到 {symbol} 的资金流向数据")
+
+        parts = match.group(1).split("~")
+        if len(parts) < 10:
+            raise Exception(f"资金流向数据格式异常: {symbol}")
+
+        try:
+            result = {
+                "symbol": symbol,
+                "main_inflow": float(parts[1]) if parts[1] else 0,        # 主力流入（万元）
+                "main_outflow": float(parts[2]) if parts[2] else 0,       # 主力流出（万元）
+                "main_net_inflow": float(parts[3]) if parts[3] else 0,    # 主力净流入（万元）
+                "main_net_pct": float(parts[4]) if parts[4] else 0,       # 主力净占比（%）
+                "retail_inflow": float(parts[5]) if parts[5] else 0,      # 散户流入（万元）
+                "retail_outflow": float(parts[6]) if parts[6] else 0,     # 散户流出（万元）
+                "retail_net_inflow": float(parts[7]) if parts[7] else 0,  # 散户净流入（万元）
+                "retail_net_pct": float(parts[8]) if parts[8] else 0,     # 散户净占比（%）
+                "total_amount": float(parts[9]) if parts[9] else 0,       # 总资金量（万元）
+                "name": parts[12] if len(parts) > 12 else "",
+                "date": parts[13] if len(parts) > 13 else "",
+                "timestamp": datetime.now().isoformat(),
+            }
+        except (ValueError, IndexError) as e:
+            logger.warning(f"解析资金流向数据失败 {symbol}: {e}")
+            raise Exception(f"解析资金流向数据失败: {symbol}")
+
+        self.cache[cache_key] = (result, datetime.now())
+        return result
+
+    async def get_capital_flow_batch(self, symbols: List[str]) -> Dict[str, Any]:
+        """批量获取多只股票的实时资金流向"""
+        tc_codes = [f"ff_{self._to_tencent_code(sym)}" for sym in symbols]
+        codes_str = ",".join(tc_codes)
+        url = f"http://qt.gtimg.cn/q={codes_str}"
+
+        session = self.session or aiohttp.ClientSession(headers=self._headers)
+        close_session = self.session is None
+
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                raw = await resp.read()
+                text = raw.decode("gbk", errors="replace")
+        finally:
+            if close_session:
+                await session.close()
+
+        results = {}
+        for symbol in symbols:
+            tc_code = self._to_tencent_code(symbol)
+            pattern = f'v_ff_{tc_code}="(.+?)"'
+            match = re.search(pattern, text)
+            if match:
+                parts = match.group(1).split("~")
+                if len(parts) >= 10:
+                    try:
+                        results[symbol] = {
+                            "main_net_inflow": float(parts[3]) if parts[3] else 0,
+                            "main_net_pct": float(parts[4]) if parts[4] else 0,
+                            "retail_net_inflow": float(parts[7]) if parts[7] else 0,
+                            "total_amount": float(parts[9]) if parts[9] else 0,
+                        }
+                    except (ValueError, IndexError):
+                        results[symbol] = {"error": "解析失败"}
+                else:
+                    results[symbol] = {"error": "数据不完整"}
+            else:
+                results[symbol] = {"error": "未获取到数据"}
+
+        return results
+
     async def search_stocks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """搜索股票 - 使用新浪搜索 API"""
         try:

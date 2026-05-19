@@ -364,6 +364,46 @@ class AIAnalystService:
             logger.warning(f"获取策略信号失败 {symbol}: {e}")
             return []
 
+    async def _fetch_fundamental_and_flow(self, symbol: str) -> Dict[str, Any]:
+        """获取基本面数据 + 历史资金流向（AKShare）+ 实时资金流（腾讯）"""
+        result = {"fundamentals": {}, "capital_flow_realtime": {}, "capital_flow_history": {}}
+
+        try:
+            from app.services.fundamental_data import get_stock_fundamentals, get_fund_flow_history
+            from app.services.market_data import MarketDataService
+
+            # 并行获取基本面、历史资金流、实时资金流
+            fund_task = get_stock_fundamentals(symbol)
+            flow_hist_task = get_fund_flow_history(symbol)
+
+            fund_result, flow_hist = await asyncio.gather(
+                fund_task, flow_hist_task, return_exceptions=True
+            )
+
+            if not isinstance(fund_result, Exception) and fund_result:
+                result["fundamentals"] = fund_result.get("financials", {})
+
+            if not isinstance(flow_hist, Exception) and flow_hist:
+                result["capital_flow_history"] = flow_hist.get("summary", {})
+
+            # 实时资金流（腾讯 ff_ 接口）
+            try:
+                market_svc = MarketDataService()
+                async with market_svc:
+                    flow_rt = await market_svc.get_capital_flow(symbol)
+                    result["capital_flow_realtime"] = {
+                        "main_net_inflow": flow_rt.get("main_net_inflow", 0),
+                        "main_net_pct": flow_rt.get("main_net_pct", 0),
+                        "retail_net_inflow": flow_rt.get("retail_net_inflow", 0),
+                    }
+            except Exception as e:
+                logger.warning(f"获取实时资金流失败 {symbol}: {e}")
+
+        except Exception as e:
+            logger.warning(f"获取基本面/资金流数据失败 {symbol}: {e}")
+
+        return result
+
     # ============================================================
     #  大盘趋势分析（增强版）
     # ============================================================
@@ -480,13 +520,14 @@ class AIAnalystService:
             return StockAnalysis(**cached_result)
 
         try:
-            # 并行获取：实时行情 + 技术指标 + 策略信号
+            # 并行获取：实时行情 + 技术指标 + 策略信号 + 基本面/资金流
             market_task = self._fetch_market_data([symbol])
             tech_task = self._fetch_technical_data(symbol, days=60)
             signal_task = self._fetch_strategy_signals(symbol)
+            fundamental_task = self._fetch_fundamental_and_flow(symbol)
 
-            stock_data, tech_data, strategy_signals = await asyncio.gather(
-                market_task, tech_task, signal_task, return_exceptions=True
+            stock_data, tech_data, strategy_signals, fund_data = await asyncio.gather(
+                market_task, tech_task, signal_task, fundamental_task, return_exceptions=True
             )
 
             if isinstance(stock_data, Exception):
@@ -495,6 +536,8 @@ class AIAnalystService:
                 tech_data = {}
             if isinstance(strategy_signals, Exception):
                 strategy_signals = []
+            if isinstance(fund_data, Exception):
+                fund_data = {"fundamentals": {}, "capital_flow_realtime": {}, "capital_flow_history": {}}
 
             # 构建用户上下文信息
             context_info = ""
@@ -518,6 +561,15 @@ class AIAnalystService:
 
 ## 实时行情
 {json.dumps(stock_data.get(symbol, {}), ensure_ascii=False, indent=2)}
+
+## 基本面财务数据
+{json.dumps(fund_data.get('fundamentals', {}), ensure_ascii=False, indent=2)}
+
+## 资金流向（实时）
+{json.dumps(fund_data.get('capital_flow_realtime', {}), ensure_ascii=False, indent=2)}
+
+## 资金流向（近期趋势）
+{json.dumps(fund_data.get('capital_flow_history', {}), ensure_ascii=False, indent=2)}
 
 ## 最新技术指标
 {json.dumps(tech_data.get('indicators', {}), ensure_ascii=False, indent=2)}
